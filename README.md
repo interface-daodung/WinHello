@@ -20,7 +20,7 @@ Các bản phát hành nằm tại [GitHub Releases](https://github.com/interfac
 
 Windows installer hiện chưa ký mã; Windows có thể hiện cảnh báo nhà phát hành chưa xác minh. APK hiện là bản debug để thử nghiệm, chưa phải bản production ký bằng release keystore.
 
-WinGet: đang chuẩn bị gửi gói `daodung183.WinHello` vào kho cộng đồng. Khi manifest được Microsoft chấp nhận, có thể cài bằng `winget install --id daodung183.WinHello -e`.
+WinGet: manifest `daodung183.WinHello` đã được gửi trong [PR #464619](https://github.com/microsoft/winget-pkgs/pull/464619) và đang chờ duyệt. Khi gói xuất hiện trong danh mục WinGet, có thể cài bằng `winget install --id daodung183.WinHello -e`.
 
 ## Cài đặt nhanh
 
