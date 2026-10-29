@@ -70,6 +70,8 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        online.clear();
+        for (LanClient.Pc pc : PcStatusStore.recent(this)) online.put(pc.deviceId, pc);
         showDevices();
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 !getPreferences(MODE_PRIVATE).getBoolean("ssid_permission_asked", false)) {
@@ -176,6 +178,7 @@ public final class MainActivity extends Activity {
                     if (changed) showDevices();
                 });
             } catch (Exception error) {
+                SignInWidgetProvider.updateFromPoll(this, java.util.Collections.emptyList());
                 runOnUiThread(() -> {
                     String currentSsid = lanClient.currentSsid();
                     boolean changed = !online.isEmpty() ||

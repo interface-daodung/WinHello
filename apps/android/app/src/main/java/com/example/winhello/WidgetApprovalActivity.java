@@ -79,6 +79,16 @@ public final class WidgetApprovalActivity extends Activity {
             signing.update(payload.getBytes(StandardCharsets.UTF_8));
             client.approve(pc, challenge, signing.sign());
             SignInWidgetProvider.updateFromPoll(this, client.pollSavedPcs());
+            android.content.Context appContext = getApplicationContext();
+            new Thread(() -> {
+                try {
+                    Thread.sleep(3000);
+                    SignInWidgetProvider.updateFromPoll(appContext,
+                            new LanClient(appContext).pollSavedPcs());
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }, "WinHelloUnlockStatus").start();
             runOnUiThread(() -> closeWithMessage("Đã duyệt đăng nhập " + pc.name));
         } catch (Exception error) {
             runOnUiThread(() -> closeWithMessage("Không thể duyệt: " + error.getMessage()));

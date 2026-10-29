@@ -52,26 +52,23 @@ public final class SignInWidgetProvider extends AppWidgetProvider {
     }
 
     static void updateFromPoll(Context context, List<LanClient.Pc> pcs) {
-        LanClient.Pc pending = null;
-        for (LanClient.Pc pc : pcs) {
-            if (pc.pending && new LanClient(context).isPaired(pc)) {
-                pending = pc;
-                break;
-            }
-        }
-        var editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putInt("online_count", pcs.size())
+        PcStatusStore.update(context, pcs);
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean("scanned", true)
-                .putBoolean("scanning", false);
-        if (pending == null) editor.remove("pending_id").remove("pending_name");
-        else editor.putString("pending_id", pending.deviceId).putString("pending_name", pending.name);
-        editor.apply();
+                .putBoolean("scanning", false).apply();
         render(context);
     }
 
     static void clearPending(Context context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .remove("pending_id").remove("pending_name").apply();
+        List<LanClient.Pc> pcs = PcStatusStore.recent(context);
+        List<LanClient.Pc> withoutPending = new java.util.ArrayList<>();
+        for (LanClient.Pc pc : pcs) {
+            LanClient.Pc updated = new LanClient.Pc(pc.deviceId, pc.name, pc.address,
+                    pc.httpsPort, false, pc.certificatePin);
+            updated.sessionState = pc.sessionState;
+            withoutPending.add(updated);
+        }
+        PcStatusStore.update(context, withoutPending);
         render(context);
     }
 
@@ -82,9 +79,13 @@ public final class SignInWidgetProvider extends AppWidgetProvider {
         var prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         boolean scanned = prefs.getBoolean("scanned", false);
         boolean scanning = prefs.getBoolean("scanning", false);
-        String pendingId = prefs.getString("pending_id", null);
-        String pendingName = prefs.getString("pending_name", "PC");
-        int onlineCount = prefs.getInt("online_count", 0);
+        List<LanClient.Pc> pcs = PcStatusStore.recent(context);
+        LanClient.Pc pending = null;
+        for (LanClient.Pc pc : pcs) if (pc.pending) { pending = pc; break; }
+        String pendingId = pending == null ? null : pending.deviceId;
+        String pendingName = pending == null ? "PC" : pending.name;
+        int onlineCount = pcs.size();
+        LanClient.Pc onlyPc = onlineCount == 1 ? pcs.get(0) : null;
         String version;
         try { version = "v" + context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName; }
         catch (Exception ignored) { version = ""; }
@@ -99,6 +100,10 @@ public final class SignInWidgetProvider extends AppWidgetProvider {
                     ? "●  " + pendingName + " đang chờ xác nhận"
                     : !scanned ? "Nhấn ↻ để quét PC gần đây"
                     : onlineCount == 0 ? "Không thấy PC • nhấn ↻ để thử lại"
+                    : onlyPc != null && "unlocked".equals(onlyPc.sessionState)
+                    ? "●  " + onlyPc.name + " đã mở khóa"
+                    : onlyPc != null && "locked".equals(onlyPc.sessionState)
+                    ? "●  " + onlyPc.name + " đã khóa"
                     : onlineCount + " PC trên LAN • chưa có yêu cầu");
             views.setTextColor(R.id.widget_status, pendingId != null ? 0xFF64E0C7 : 0xFFA8BED6);
             views.setViewVisibility(R.id.widget_approve, pendingId == null || scanning ? View.GONE : View.VISIBLE);

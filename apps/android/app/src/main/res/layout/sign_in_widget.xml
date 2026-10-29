@@ -30,7 +30,7 @@
             android:id="@+id/widget_version"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="v0.3.0"
+            android:text="v0.3.1"
             android:textColor="#8EA9C4"
             android:textSize="11sp" />
     </LinearLayout>
