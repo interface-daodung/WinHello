@@ -29,6 +29,24 @@ if (args.Length == 1 && args[0] == "--print-enrollment-qr")
     return 0;
 }
 
+if (args.Length == 1 && args[0] == "--print-download-qr")
+{
+    var downloadUrl = Console.In.ReadLine();
+    if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) ||
+        uri.Scheme != Uri.UriSchemeHttps ||
+        !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) ||
+        !System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath,
+            @"^/interface-daodung/WinHello/releases/download/v\d+\.\d+\.\d+/WinHello-ver\d+\.\d+\.\d+-android-debug\.apk$"))
+    {
+        Console.Error.WriteLine("A valid WinHello GitHub APK release URL is required on standard input.");
+        return 2;
+    }
+    using var generator = new QRCodeGenerator();
+    using var qrData = generator.CreateQrCode(downloadUrl!, QRCodeGenerator.ECCLevel.M);
+    Console.WriteLine(new AsciiQRCode(qrData).GetGraphicSmall(true, false));
+    return 0;
+}
+
 var stateDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "WinHelloLanDemo");
 Directory.CreateDirectory(stateDirectory);
 var configPath = Environment.GetEnvironmentVariable("WINHELLO_CONFIG_PATH") ?? Path.Combine(stateDirectory, "agent.json");

@@ -22,7 +22,7 @@ Windows installer hiện chưa ký mã; Windows có thể hiện cảnh báo nh�
 
 1. Cài Windows installer, mở **CMD mới** và gõ `winhello h`.
 2. Gõ `winhello regi`. Chấp nhận yêu cầu quyền Administrator, nhập mật khẩu Windows của tài khoản cần đăng nhập. QR TOTP xuất hiện ngay trong terminal và không được lưu thành ảnh.
-3. Cài APK trên Android. Trong app, nhấn **+**, quét QR ở PC và xác nhận ghép đôi.
+3. Gõ `winhello app` để hiện QR tải APK Android. Trong app, nhấn **+**, quét QR TOTP từ `winhello regi` và xác nhận ghép đôi.
 4. Khi Windows yêu cầu đăng nhập, app tự tìm PC trên LAN. Nhấn biểu tượng khóa cạnh PC và xác nhận vân tay/sinh trắc học trên điện thoại.
 
 Muốn gỡ WinHello khỏi một PC đã ghép đôi, hãy mở khóa Windows trên PC đó, rồi nhấn biểu tượng thùng rác trong app và xác nhận sinh trắc học. LAN Agent thu hồi ghép đôi; tùy chọn WinHello sẽ không còn xuất hiện ở màn đăng nhập kế tiếp. Nếu PC offline, app chỉ xóa dữ liệu trên điện thoại; PC chưa nhận được lệnh thu hồi.
@@ -31,8 +31,11 @@ Muốn gỡ WinHello khỏi một PC đã ghép đôi, hãy mở khóa Windows t
 | --- | --- |
 | `winhello` hoặc `winhello h` | Hiện trợ giúp |
 | `winhello regi` | Đăng ký nếu chưa có; báo “already registered” nếu đã đăng ký |
+| `winhello app` | Hiện QR và URL tải APK Android của phiên bản đang cài |
 | `winhello v` | Hiện phiên bản |
 | `winhello uninstall` | Gỡ Credential Provider, service và dữ liệu ghép đôi |
+
+URL của `winhello app` được tính trước từ `VERSION` và tên APK theo quy ước phát hành. QR chỉ tải được sau khi APK cùng phiên bản đã được tải lên GitHub Release tương ứng.
 
 Android giữ các PC đã ghép trong danh sách khi offline; màn hình chính tự dò LAN mỗi 5 giây. Trạng thái **Đã mở/Đã khóa** lấy từ Windows qua HTTPS có ghim chứng chỉ. Nút thông tin **ⓘ** trong app giải thích các thao tác.
 Khi app đóng, widget không quét nền. Nhấn **↻ Quét PC** trên widget để kiểm tra một lần; nếu PC có yêu cầu đăng nhập, widget hiện nút **Duyệt mở khóa** và mở thẳng xác nhận sinh trắc học.

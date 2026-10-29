@@ -10,12 +10,32 @@ if ($Command -in @('h', 'help', '-h', '--help')) {
     Write-Host 'WinHello commands:'
     Write-Host '  winhello h           Show this help'
     Write-Host '  winhello regi        Register Windows sign-in and show TOTP QR in terminal'
+    Write-Host '  winhello app         Show Android APK download QR and URL'
     Write-Host '  winhello uninstall   Remove Windows sign-in, service and enrollment data'
     Write-Host '  winhello v           Show version'
     exit 0
 }
 if ($Command -in @('v', 'version', '--version')) {
     Write-Host ('WinHello ' + (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim())
+    exit 0
+}
+if ($Command -eq 'app') {
+    $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
+    if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid WinHello version: $version" }
+    $downloadUrl = "https://github.com/interface-daodung/WinHello/releases/download/v$version/WinHello-ver$version-android-debug.apk"
+    $agent = Join-Path $root 'bin\agent\WinHello.LanAgent.exe'
+    if (-not (Test-Path -LiteralPath $agent)) {
+        $agent = Join-Path $root 'apps\lan-agent\bin\Release\net10.0\win-x64\publish\WinHello.LanAgent.exe'
+    }
+    if (-not (Test-Path -LiteralPath $agent)) {
+        throw 'QR renderer is missing. Build the Windows package with scripts\build-windows.ps1 first.'
+    }
+    Write-Host "WinHello Android v$version"
+    Write-Host 'Scan this QR with your phone to download the APK:'
+    $downloadUrl | & $agent --print-download-qr
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    Write-Host $downloadUrl
+    Write-Host "The link works after the APK is uploaded to GitHub Release v$version."
     exit 0
 }
 if ($Command -notin @('regi', 'uninstall')) {
