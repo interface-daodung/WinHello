@@ -8,7 +8,7 @@ Chạy các lệnh từ thư mục gốc của repo. Để cài hoặc cập nh�
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-winhello.ps1 -IUnderstandThisChangesLogonUI
 ```
 
-Script build Credential Provider và LAN Agent, tạo chứng chỉ TLS cùng TOTP secret, cài Windows Service và firewall rule cho mạng Private, rồi mở QR enrollment. Trong app Android, chọn **Scan PC setup QR** và **Confirm TOTP enrollment**. Script chỉ đăng ký tile sau khi ghép thành công. Mặc định chờ 180 giây; có thể đặt `-EnrollmentTimeoutSeconds 300`.
+Script build Credential Provider và LAN Agent, tạo chứng chỉ TLS cùng TOTP secret, cài Windows Service và firewall rule cho mạng Private, rồi in QR enrollment ngay trong terminal bằng QRCoder. Giữ cửa sổ terminal mở; trong app Android, chọn **Scan PC setup QR** và **Confirm TOTP enrollment**. QR và URI chứa secret không được ghi ra file ảnh hoặc file tạm. Script chỉ đăng ký tile sau khi ghép thành công. Mặc định chờ 180 giây; có thể đặt `-EnrollmentTimeoutSeconds 300`.
 
 Khi được hỏi, nhập mật khẩu Windows của tài khoản cần đăng nhập. Mật khẩu được mã hóa trong `C:\ProgramData\WinHelloLanDemo`; sau khi điện thoại duyệt, LAN Agent trả nó qua named pipe chỉ cho LocalSystem và Administrators để Credential Provider gửi cho Windows. TOTP và vân tay trên điện thoại dùng để duyệt yêu cầu, còn Windows xác thực bằng mật khẩu đã lưu.
 
@@ -38,3 +38,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-winh
 ```
 
 Uninstaller dừng và xóa service trước khi xóa Credential Provider, firewall rule, chứng chỉ và dữ liệu ghép đôi. Nếu service đang chờ Windows xóa, khởi động lại rồi chạy lại lệnh gỡ.
+
+Lệnh đặt lại ghép đôi cũng in QR trực tiếp trong terminal. Nếu máy đang cài phiên bản cũ, chạy `scripts/update-binaries.ps1` bằng Administrator trước khi đặt lại ghép đôi để LAN Agent có lệnh `--print-enrollment-qr`.

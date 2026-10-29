@@ -7,6 +7,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $installDir = Join-Path $env:ProgramFiles 'WinHelloLanDemo'
+$dataDir = Join-Path $env:ProgramData 'WinHelloLanDemo'
 $providerDll = Join-Path $repoRoot 'build\credential-provider-monorepo-llvm-mingw\WinHelloCredentialProvider.dll'
 $agentProject = Join-Path $repoRoot 'apps\lan-agent\WinHello.LanAgent.csproj'
 $publishDir = Join-Path $repoRoot 'apps\lan-agent\bin\Release\net10.0\win-x64\publish'
@@ -47,5 +48,9 @@ Get-ChildItem -Path $installDir -Filter 'WinHelloCredentialProvider.dll.old.*' -
 Write-Host 'Starting WinHelloLanAgent service...'
 Start-Service WinHelloLanAgent
 (Get-Service WinHelloLanAgent).WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
+
+foreach ($oldQrFile in @('enrollment.png', 'enrollment-uri.txt')) {
+    Remove-Item -LiteralPath (Join-Path $dataDir $oldQrFile) -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host 'Updated WinHello binaries successfully!' -ForegroundColor Green

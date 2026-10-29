@@ -5,8 +5,6 @@ $serviceName = 'WinHelloLanAgent'
 $dataDir = [IO.Path]::GetFullPath((Join-Path $env:ProgramData 'WinHelloLanDemo'))
 $configPath = Join-Path $dataDir 'agent.json'
 $pairingPath = Join-Path $dataDir 'pairing.json'
-$qrPath = Join-Path $dataDir 'enrollment.png'
-$qrPayloadPath = Join-Path $dataDir 'enrollment-uri.txt'
 $agentExe = Join-Path $env:ProgramFiles 'WinHelloLanDemo\WinHello.LanAgent.exe'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -62,15 +60,12 @@ try {
     try { $pin = ([BitConverter]::ToString($sha.ComputeHash($certificate.RawData))).Replace('-', '') }
     finally { $sha.Dispose() }
     $enrollmentUri = "winhello://enroll?pcid=$($oldConfig.DeviceId)&secret=$($newConfig.TotpSecret)&pin=$pin&https=54431"
-    Set-Content -LiteralPath $qrPayloadPath -Value $enrollmentUri -NoNewline -Encoding ASCII
-    & $agentExe --make-enrollment-qr-file $qrPayloadPath $qrPath
-    Remove-Item -LiteralPath $qrPayloadPath -Force -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $qrPath)) { throw 'Could not generate the new setup QR.' }
+    $enrollmentUri | & $agentExe --print-enrollment-qr
+    if ($LASTEXITCODE -ne 0) { throw 'Could not print the new setup QR.' }
 
     Start-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-    Start-Process -FilePath $qrPath
-    Write-Host 'Scan the new QR in the Android app. The previous phone secret is now invalid.'
+    Write-Host 'Scan the QR above in the Android app. The previous phone secret is now invalid.'
     $deadline = (Get-Date).AddSeconds($EnrollmentTimeoutSeconds)
     $enrolled = $false
     while ((Get-Date) -lt $deadline) {
@@ -83,7 +78,6 @@ try {
         Start-Sleep -Seconds 2
     }
     if (-not $enrolled) { throw 'Phone did not confirm the new TOTP enrollment before the timeout.' }
-    Remove-Item -LiteralPath $qrPath -Force -ErrorAction SilentlyContinue
     Write-Host 'Phone enrollment rotated and confirmed.'
 }
 catch {
@@ -98,7 +92,5 @@ catch {
             Start-Service -Name $serviceName
         } catch { [Console]::Error.WriteLine("Rollback could not fully restore the previous enrollment: $($_.Exception.Message)") }
     }
-    Remove-Item -LiteralPath $qrPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $qrPayloadPath -Force -ErrorAction SilentlyContinue
     throw $originalError
 }

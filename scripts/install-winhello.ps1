@@ -16,7 +16,6 @@ $dataDir = Join-Path $env:ProgramData 'WinHelloLanDemo'
 $configPath = Join-Path $dataDir 'agent.json'
 $pairingPath = Join-Path $dataDir 'pairing.json'
 $markerPath = Join-Path $dataDir 'install.json'
-$qrPayloadPath = Join-Path $dataDir 'enrollment-uri.txt'
 $classKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\$clsid"
 $providerKey = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$clsid"
 $thumbprint = $null
@@ -179,11 +178,8 @@ try {
     try { $pin = ([BitConverter]::ToString($sha.ComputeHash($certificate.RawData))).Replace('-', '') }
     finally { $sha.Dispose() }
     $enrollmentUri = "winhello://enroll?pcid=$deviceId&secret=$totpSecret&pin=$pin&https=54431"
-    $qrPath = Join-Path $dataDir 'enrollment.png'
-    Set-Content -LiteralPath $qrPayloadPath -Value $enrollmentUri -NoNewline -Encoding ASCII
-    & (Join-Path $installDir 'WinHello.LanAgent.exe') --make-enrollment-qr-file $qrPayloadPath $qrPath
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $qrPath)) { throw 'Could not create the setup QR code.' }
-    Remove-Item -LiteralPath $qrPayloadPath -Force
+    $enrollmentUri | & (Join-Path $installDir 'WinHello.LanAgent.exe') --print-enrollment-qr
+    if ($LASTEXITCODE -ne 0) { throw 'Could not print the setup QR code.' }
 
     New-Service -Name $serviceName -DisplayName 'WinHello LAN Agent' `
         -BinaryPathName ('"' + (Join-Path $installDir 'WinHello.LanAgent.exe') + '"') `
@@ -196,8 +192,7 @@ try {
         -Protocol TCP -LocalPort 54431 -Profile Private | Out-Null
     Start-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-    Start-Process -FilePath $qrPath
-    Write-Host 'Scan the PC setup QR in the Android app now. Waiting for TOTP enrollment confirmation...'
+    Write-Host 'Scan the QR above in the Android app now. Waiting for TOTP enrollment confirmation...'
     $deadline = (Get-Date).AddSeconds($EnrollmentTimeoutSeconds)
     $enrolled = $false
     while ((Get-Date) -lt $deadline) {
@@ -211,7 +206,6 @@ try {
     }
     if (-not $enrolled) { throw 'Phone did not confirm TOTP enrollment before the timeout.' }
 
-    Remove-Item -LiteralPath $qrPath -Force -ErrorAction SilentlyContinue
     $registered = $true
     New-Item -Path "$classKey\InprocServer32" -Force | Out-Null
     Set-Item -Path "$classKey\InprocServer32" -Value (Join-Path $installDir 'WinHelloCredentialProvider.dll')

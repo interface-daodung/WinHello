@@ -14,12 +14,17 @@ const int HttpsPort = 54431;
 const int DiscoveryPort = 45876;
 const string PipeName = "WinHello.LanAgent";
 
-if (args.Length == 3 && args[0] == "--make-enrollment-qr-file")
+if (args.Length == 1 && args[0] == "--print-enrollment-qr")
 {
-    var enrollmentUri = File.ReadAllText(args[1]);
+    var enrollmentUri = Console.In.ReadLine();
+    if (string.IsNullOrWhiteSpace(enrollmentUri) || !enrollmentUri.StartsWith("winhello://enroll?", StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine("A valid enrollment URI is required on standard input.");
+        return 2;
+    }
     using var generator = new QRCodeGenerator();
     using var qrData = generator.CreateQrCode(enrollmentUri, QRCodeGenerator.ECCLevel.Q);
-    File.WriteAllBytes(args[2], new PngByteQRCode(qrData).GetGraphic(12));
+    Console.WriteLine(new AsciiQRCode(qrData).GetGraphicSmall(true, false));
     return 0;
 }
 
@@ -51,11 +56,10 @@ Console.WriteLine("This demo verifies a TOTP and biometric-backed phone signatur
 if (configuration is null)
 {
     var enrollmentUri = AgentBootstrap.BuildEnrollmentUri(deviceId, TotpEncoding.EncodeBase32(totpSecret), certificatePin);
-    var qrPath = Path.Combine(stateDirectory, "enrollment.png");
     using var generator = new QRCodeGenerator();
     using var qrData = generator.CreateQrCode(enrollmentUri, QRCodeGenerator.ECCLevel.Q);
-    File.WriteAllBytes(qrPath, new PngByteQRCode(qrData).GetGraphic(12));
-    Console.WriteLine($"Development enrollment QR written to: {qrPath}");
+    Console.WriteLine(new AsciiQRCode(qrData).GetGraphicSmall(true, false));
+    Console.WriteLine("Scan this development enrollment QR from the terminal.");
 }
 
 var builder = WebApplication.CreateBuilder(args);
