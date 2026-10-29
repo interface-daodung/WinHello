@@ -25,6 +25,8 @@ Windows installer hiện chưa ký mã; Windows có thể hiện cảnh báo nh�
 3. Cài APK trên Android. Trong app, nhấn **+**, quét QR ở PC và xác nhận ghép đôi.
 4. Khi Windows yêu cầu đăng nhập, app tự tìm PC trên LAN. Nhấn biểu tượng khóa cạnh PC và xác nhận vân tay/sinh trắc học trên điện thoại.
 
+Muốn gỡ WinHello khỏi một PC đã ghép đôi, hãy mở khóa Windows trên PC đó, rồi nhấn biểu tượng thùng rác trong app và xác nhận sinh trắc học. LAN Agent thu hồi ghép đôi; tùy chọn WinHello sẽ không còn xuất hiện ở màn đăng nhập kế tiếp. Nếu PC offline, app chỉ xóa dữ liệu trên điện thoại; PC chưa nhận được lệnh thu hồi.
+
 | Lệnh CMD | Tác dụng |
 | --- | --- |
 | `winhello` hoặc `winhello h` | Hiện trợ giúp |

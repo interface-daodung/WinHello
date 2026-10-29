@@ -318,27 +318,37 @@ public final class MainActivity extends Activity {
     }
 
     private void forgetPc(LanClient.Pc pc) {
-        status.setText("Revoking the phone key on the PC...");
+        status.setText("Đang thu hồi phương thức WinHello trên PC...");
         background.execute(() -> {
             try {
                 lanClient.unpair(pc);
                 runOnUiThread(() -> {
-                    status.setText("Pairing revoked on the PC and local TOTP removed.");
+                    status.setText("Đã gỡ WinHello trên PC và xóa dữ liệu trên điện thoại.");
                     showDevices();
                     scanLan();
                 });
             } catch (Exception error) {
-                runOnUiThread(() -> status.setText("Could not revoke pairing: " + error.getMessage()));
+                runOnUiThread(() -> status.setText(error.getMessage().contains("423")
+                        ? "Hãy mở khóa Windows rồi thử xóa lại."
+                        : "Không thể thu hồi ghép đôi: " + error.getMessage()));
             }
         });
     }
 
     private void confirmForget(LanClient.SavedPc item, LanClient.Pc pc) {
+        if (pc != null && !"unlocked".equals(pc.sessionState)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Hãy mở khóa Windows")
+                    .setMessage("PC phải đang mở trong Windows để thu hồi và ẩn phương thức đăng nhập WinHello.")
+                    .setPositiveButton("Đã hiểu", null)
+                    .show();
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Xóa " + item.name + "?")
                 .setMessage(pc == null
                         ? "Xóa dữ liệu trên điện thoại sau xác nhận vân tay. PC đang offline nên khóa đã ghép trên PC chưa được thu hồi."
-                        : "Xác nhận vân tay để thu hồi ghép đôi trên PC và xóa dữ liệu trên điện thoại.")
+                        : "Xác nhận vân tay để thu hồi ghép đôi, ẩn tùy chọn WinHello trên PC và xóa dữ liệu trên điện thoại.")
                 .setNegativeButton("Hủy", null)
                 .setPositiveButton("Xác nhận vân tay", (dialog, which) -> authenticateForget(item, pc))
                 .show();

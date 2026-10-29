@@ -724,14 +724,19 @@ namespace
             if (count == nullptr || defaultIndex == nullptr || autoLogon == nullptr)
                 return E_POINTER;
 
-            *count = userCount_ > 0 ? userCount_ : 1;
+            *count = 0;
             *defaultIndex = CREDENTIAL_PROVIDER_NO_DEFAULT;
             *autoLogon = FALSE;
+            wchar_t status[512]{};
+            if (!QueryLanAgent(L"STATUS", status, ARRAYSIZE(status)) ||
+                wcsstr(status, L"READY|") != status ||
+                wcsstr(status, L"|UNPAIRED") != nullptr)
+                return S_OK;
+
+            *count = userCount_ > 0 ? userCount_ : 1;
             if (userCount_ == 1)
             {
-                wchar_t status[512]{};
-                if (QueryLanAgent(L"STATUS", status, ARRAYSIZE(status)) &&
-                    wcsstr(status, L"|APPROVED|") != nullptr)
+                if (wcsstr(status, L"|APPROVED|") != nullptr)
                 {
                     *defaultIndex = 0;
                     *autoLogon = TRUE;
@@ -766,7 +771,7 @@ namespace
             {
                 wchar_t status[512]{};
                 const bool available = QueryLanAgent(L"STATUS", status, ARRAYSIZE(status)) &&
-                    wcsstr(status, L"READY|") == status;
+                    wcsstr(status, L"READY|") == status && wcsstr(status, L"|UNPAIRED") == nullptr;
                 const LONG current = available ? 1 : 0;
                 const LONG previous = InterlockedCompareExchange(&self->lastAvailable_, current, -1);
                 const LONG approved = available && wcsstr(status, L"|APPROVED|") != nullptr ? 1 : 0;

@@ -89,6 +89,8 @@ app.MapPost("/v1/pair", (PairRequest request) =>
 
 app.MapPost("/v1/unpair", (PairRequest request) =>
 {
+    if (WindowsSessionState.Get() != "unlocked")
+        return Results.Json(new { error = "unlock_windows_before_unpairing" }, statusCode: StatusCodes.Status423Locked);
     if (!state.TryUnpair(request.DeviceId, request.TotpCode))
         return Results.Unauthorized();
     return Results.Ok(new { unpaired = true });
@@ -334,6 +336,11 @@ internal sealed class DemoState
             CryptographicOperations.ZeroMemory(publicKey);
             publicKey = null;
             pairedDeviceId = null;
+            foreach (var (id, request) in requests)
+            {
+                if (requests.TryRemove(id, out var removed))
+                    CryptographicOperations.ZeroMemory(removed.Nonce);
+            }
             pairingAttempts = 0;
             pairingBlockedUntil = DateTimeOffset.MinValue;
             return true;
@@ -342,14 +349,18 @@ internal sealed class DemoState
 
     public string StartOrGetRequest()
     {
-        RemoveExpired();
-        var current = requests.Values.FirstOrDefault();
-        if (current is not null)
-            return $"{(current.Approved ? "APPROVED" : "PENDING")}|{current.RequestId:D}";
+        lock (gate)
+        {
+            RemoveExpired();
+            if (publicKey is null) return "ERROR|not_paired";
+            var current = requests.Values.FirstOrDefault();
+            if (current is not null)
+                return $"{(current.Approved ? "APPROVED" : "PENDING")}|{current.RequestId:D}";
 
-        var request = new PendingRequest(Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow.AddMinutes(2), false);
-        requests[request.RequestId] = request;
-        return $"PENDING|{request.RequestId:D}";
+            var request = new PendingRequest(Guid.NewGuid(), RandomNumberGenerator.GetBytes(32), DateTimeOffset.UtcNow.AddMinutes(2), false);
+            requests[request.RequestId] = request;
+            return $"PENDING|{request.RequestId:D}";
+        }
     }
 
     public string GetCredential(X509Certificate2 certificate, string stateDirectory)
@@ -387,6 +398,7 @@ internal sealed class DemoState
     public string GetStatus()
     {
         RemoveExpired();
+        if (!IsPaired) return $"READY|{deviceId}|UNPAIRED";
         var request = requests.Values.FirstOrDefault();
         var requestStatus = request is null
             ? "IDLE"
