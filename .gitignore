@@ -2,6 +2,7 @@
 .nuget-packages/
 build/
 dist/
+publish/
 src/**/bin/
 src/**/obj/
 tools/

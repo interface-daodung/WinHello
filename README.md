@@ -28,4 +28,6 @@ The Android APK is at `apps/android/app/build/outputs/apk/debug/app-debug.apk`. 
 
 Build the distributable Windows TUI with `scripts/build-windows.ps1`. The package is written to `dist/winhello-windows/`. Run `scripts/install-cli.ps1` once to put its `winhello` command on the user PATH, then open a new CMD window and run `winhello h`.
 
+For GitHub Release files, run `scripts/build-release.ps1` and use the artifacts in `publish/`. See [release instructions](docs/release.md).
+
 This is a prototype. Keep a working Windows password sign-in method available. Phone approval gates a stored Windows password; TOTP alone is not a Windows authentication package.

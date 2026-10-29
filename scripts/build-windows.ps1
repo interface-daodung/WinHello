@@ -16,6 +16,7 @@ Copy-Item -Path (Join-Path $agentPublish '*') -Destination (Join-Path $package '
 Copy-Item -Path (Join-Path $root 'cli\*') -Destination (Join-Path $package 'cli') -Force
 Copy-Item -Path (Join-Path $root 'scripts\*.ps1') -Destination (Join-Path $package 'scripts') -Force
 Copy-Item -LiteralPath (Join-Path $root 'winhello.cmd'), (Join-Path $root 'VERSION') -Destination $package -Force
+Copy-Item -LiteralPath (Join-Path $root 'assets\winhello.ico') -Destination $package -Force
 Set-Content -LiteralPath (Join-Path $package 'package.marker') -Value 'prebuilt' -NoNewline
 Write-Host "Windows TUI package: $package"
 $archive = Join-Path $root ('dist\winhello-windows-' + (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim() + '.zip')
