@@ -1,3 +1,4 @@
 <resources>
+    <string name="app_name">WinHello</string>
     <string name="widget_description">Open the WinHello LAN demo app</string>
 </resources>

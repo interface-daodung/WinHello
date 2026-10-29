@@ -1,5 +1,18 @@
 # Cài đặt WinHello
 
+## CLI trên Windows
+
+Từ repo, chạy `scripts/build-windows.ps1` để tạo gói `dist/winhello-windows/`, sau đó chạy `scripts/install-cli.ps1`. Mở CMD mới và dùng:
+
+```cmd
+winhello h
+winhello regi
+winhello v
+winhello uninstall
+```
+
+`regi` chỉ cài khi chưa đăng ký; nếu đã có service và Credential Provider, lệnh báo đã đăng ký. QR TOTP xuất hiện dưới dạng ký tự trong terminal. Các thao tác cài và gỡ mở terminal có quyền Administrator. Gói Windows đã chứa DLL và Agent đã build, nên máy nhận gói không cần CMake hoặc .NET SDK.
+
 Chạy các lệnh từ thư mục gốc của repo. Để cài hoặc cập nhật bản đang chạy, mở PowerShell 64-bit bằng **Run as Administrator**. Luôn giữ một phương thức đăng nhập Windows dự phòng.
 
 ## Cài đặt và ghép điện thoại

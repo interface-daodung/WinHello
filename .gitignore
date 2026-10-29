@@ -1,6 +1,7 @@
 .dotnet-cli/
 .nuget-packages/
 build/
+dist/
 src/**/bin/
 src/**/obj/
 tools/

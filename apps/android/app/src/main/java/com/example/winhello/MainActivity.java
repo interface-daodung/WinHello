@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -65,6 +66,13 @@ public final class MainActivity extends Activity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(pad, pad, pad, pad);
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setContentDescription(getString(R.string.app_name));
+        LinearLayout.LayoutParams logoLayout = new LinearLayout.LayoutParams(dp(72), dp(72));
+        logoLayout.gravity = Gravity.CENTER_HORIZONTAL;
+        page.addView(logo, logoLayout);
 
         TextView title = new TextView(this);
         title.setText("WinHello LAN Demo");
