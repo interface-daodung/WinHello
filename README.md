@@ -1,33 +1,59 @@
 # WinHello
 
-Monorepo for phone-approved Windows sign-in. The Android app discovers and pairs with a PC, then approves a challenge with TOTP and a biometric-protected signing key. The LAN Agent stores pairing and serves the Credential Provider. After approval, the Credential Provider submits the stored Windows password to Winlogon.
+<p align="center"><img src="assets/winhello-logo.png" alt="WinHello logo" width="144"></p>
 
-## Layout
+WinHello cho phép duyệt yêu cầu đăng nhập Windows bằng sinh trắc học trên điện thoại Android khi hai thiết bị ở cùng mạng LAN. Điện thoại gửi TOTP và chữ ký của challenge; LAN Agent xác minh trước khi Credential Provider chuyển mật khẩu Windows đã lưu cho Winlogon.
 
-| Path | Runtime | Responsibility |
-| --- | --- | --- |
-| `apps/android/` | Android / Java / Gradle | QR enrollment, discovery, approval, widget |
-| `apps/lan-agent/` | Windows Service / .NET | HTTPS API, TOTP and signature checks, named pipe |
-| `apps/credential-provider/` | LogonUI / C++ / CMake | Sign-in tile and Windows credential serialization |
-| `cli/` | Windows CMD / PowerShell | `winhello` commands for registration and removal |
-| `assets/` | PNG / ICO | Shared WinHello logo |
-| `contracts/` | Documentation | HTTP and named-pipe messages shared across apps |
-| `docs/` | Documentation | Architecture and design notes |
-| `scripts/` | PowerShell | Build, installation, update and removal |
-| `cmake/` | CMake | LLVM-MinGW toolchain configuration |
+> **Bản thử nghiệm.** Giữ phương thức đăng nhập Windows bằng mật khẩu để dự phòng. Mật khẩu Windows được mã hóa trên PC lúc đăng ký; TOTP và vân tay trên điện thoại không thay thế cơ chế xác thực tài khoản của Windows.
 
-## Build from the repository root
+## Tải xuống
+
+Các bản phát hành nằm tại [GitHub Releases](https://github.com/interface-daodung/WinHello/releases). Mỗi phiên bản có:
+
+| Tệp | Công dụng |
+| --- | --- |
+| `WinHello-verX.Y.Z-windows-x64-setup.exe` | Bộ cài Inno Setup 7 cho CLI `winhello` và các binary Windows x64 |
+| `WinHello-verX.Y.Z-android-debug.apk` | Ứng dụng Android, bản thử nghiệm ký bằng debug key |
+| `WinHello-verX.Y.Z-SHA256SUMS.txt` | SHA-256 để kiểm tra tệp tải xuống |
+
+Windows installer hiện chưa ký mã; Windows có thể hiện cảnh báo nhà phát hành chưa xác minh. APK hiện là bản debug để thử nghiệm, chưa phải bản production ký bằng release keystore.
+
+## Cài đặt nhanh
+
+1. Cài Windows installer, mở **CMD mới** và gõ `winhello h`.
+2. Gõ `winhello regi`. Chấp nhận yêu cầu quyền Administrator, nhập mật khẩu Windows của tài khoản cần đăng nhập. QR TOTP xuất hiện ngay trong terminal và không được lưu thành ảnh.
+3. Cài APK trên Android. Trong app, nhấn **+**, quét QR ở PC và xác nhận ghép đôi.
+4. Khi Windows yêu cầu đăng nhập, app tự tìm PC trên LAN. Nhấn biểu tượng khóa cạnh PC và xác nhận vân tay/sinh trắc học trên điện thoại.
+
+| Lệnh CMD | Tác dụng |
+| --- | --- |
+| `winhello` hoặc `winhello h` | Hiện trợ giúp |
+| `winhello regi` | Đăng ký nếu chưa có; báo “already registered” nếu đã đăng ký |
+| `winhello v` | Hiện phiên bản |
+| `winhello uninstall` | Gỡ Credential Provider, service và dữ liệu ghép đôi |
+
+Android giữ các PC đã ghép trong danh sách khi offline; màn hình chính tự dò LAN mỗi 5 giây. Trạng thái **Đã mở/Đã khóa** lấy từ Windows qua HTTPS có ghim chứng chỉ. Nút thông tin **ⓘ** trong app giải thích các thao tác.
+
+## Cấu trúc mã nguồn
+
+| Thư mục | Thành phần |
+| --- | --- |
+| `apps/android/` | Ứng dụng Java, widget, QR, TOTP và sinh trắc học |
+| `apps/lan-agent/` | Windows Service .NET, HTTPS, UDP discovery và named pipe |
+| `apps/credential-provider/` | DLL C++/COM cho LogonUI |
+| `cli/` | Lệnh TUI `winhello` |
+| `contracts/` | Hợp đồng HTTP và named pipe |
+| `packaging/` | Cấu hình Inno Setup 7 |
+| `scripts/` | Build, cài đặt, cập nhật và gỡ |
+
+Xem thêm [kiến trúc](docs/architecture.md), [hướng dẫn cài/gỡ](INSTALL.md) và [hợp đồng giao tiếp](contracts/README.md).
+
+## Build từ mã nguồn
+
+Trên Windows với .NET 10 SDK, LLVM-MinGW, Android SDK/Gradle và Inno Setup 7 x64:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-lan-agent.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-credential-provider.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
 
-The Android APK is at `apps/android/app/build/outputs/apk/debug/app-debug.apk`. See [architecture](docs/architecture.md) and [INSTALL.md](INSTALL.md) for the system flow and installation commands. The live Windows installation in `C:\Program Files\WinHelloLanDemo` is separate from this source tree; moving source files does not change it.
-
-Build the distributable Windows TUI with `scripts/build-windows.ps1`. The package is written to `dist/winhello-windows/`. Run `scripts/install-cli.ps1` once to put its `winhello` command on the user PATH, then open a new CMD window and run `winhello h`.
-
-For GitHub Release files, run `scripts/build-release.ps1` and use the artifacts in `publish/`. See [release instructions](docs/release.md).
-
-This is a prototype. Keep a working Windows password sign-in method available. Phone approval gates a stored Windows password; TOTP alone is not a Windows authentication package.
+Installer, APK và checksums được tạo trong `publish/`. Thư mục này không được commit vào Git; tải các tệp đó lên GitHub Release. Xem [quy trình phát hành](docs/release.md).
