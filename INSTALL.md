@@ -1,38 +1,26 @@
-# Cài đặt và gỡ WinHello LAN Demo
+# Cài đặt WinHello
 
-> Đây là demo ghép đôi TOTP và duyệt bằng điện thoại. Nó chưa xác thực tài khoản Windows và không mở khóa Windows. Chỉ đăng ký tile trong VM thử nghiệm, sau khi bảo đảm còn phương thức đăng nhập dự phòng.
+Chạy các lệnh từ thư mục gốc của repo. Để cài hoặc cập nhật bản đang chạy, mở PowerShell 64-bit bằng **Run as Administrator**. Luôn giữ một phương thức đăng nhập Windows dự phòng.
 
-## Cài đặt
-
-Mở **PowerShell 64-bit bằng Run as administrator**, chuyển đến thư mục dự án rồi chạy:
+## Cài đặt và ghép điện thoại
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-winhello.ps1 -IUnderstandThisChangesLogonUI
 ```
 
-Installer tự build DLL, publish LAN Agent self-contained, tạo TLS certificate và secret TOTP, cài Windows Service, thêm firewall rule chỉ cho profile Private, rồi mở QR enrollment. Quét QR trong app Android bằng **Scan PC setup QR**; tiếp đó chọn PC vừa tìm thấy và bấm **Confirm TOTP enrollment**. Installer chỉ đăng ký Credential Provider khi TOTP enrollment thành công. Mặc định chờ 180 giây; có thể đổi timeout từ 30 đến 900 giây bằng `-EnrollmentTimeoutSeconds 300`.
+Script build Credential Provider và LAN Agent, tạo chứng chỉ TLS cùng TOTP secret, cài Windows Service và firewall rule cho mạng Private, rồi mở QR enrollment. Trong app Android, chọn **Scan PC setup QR** và **Confirm TOTP enrollment**. Script chỉ đăng ký tile sau khi ghép thành công. Mặc định chờ 180 giây; có thể đặt `-EnrollmentTimeoutSeconds 300`.
 
-QR chỉ chứa PC ID, secret TOTP và TLS pin; secret không nằm trong tham số dòng lệnh. File QR/payload tạm được tạo trong `C:\ProgramData\WinHelloLanDemo` với ACL chỉ cho SYSTEM và Administrators, rồi xóa sau enrollment. TOTP secret và pairing record vẫn nằm trong thư mục đó để service dùng; uninstaller xóa chúng.
+Khi được hỏi, nhập mật khẩu Windows của tài khoản cần đăng nhập. Mật khẩu được mã hóa trong `C:\ProgramData\WinHelloLanDemo`; sau khi điện thoại duyệt, LAN Agent trả nó qua named pipe chỉ cho LocalSystem và Administrators để Credential Provider gửi cho Windows. TOTP và vân tay trên điện thoại dùng để duyệt yêu cầu, còn Windows xác thực bằng mật khẩu đã lưu.
 
-## Gỡ cài đặt
-
-Từ PowerShell 64-bit chạy bằng Administrator:
+## Cập nhật bản đang cài
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-winhello.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-binaries.ps1
 ```
 
-Uninstaller dừng và xóa Windows Service trước; chỉ khi Service đã biến mất mới xóa Credential Provider registry keys, hai firewall rule, TLS certificate đúng thumbprint, thư mục cài đặt và dữ liệu TOTP/pairing. Nếu Windows giữ Service ở trạng thái pending deletion, script sẽ giữ lại file để tránh xóa executable đang được dùng; khởi động lại Windows rồi chạy lại lệnh gỡ.
+Script build từ `apps/lan-agent/` và `apps/credential-provider/`, dừng service, thay file trong `C:\Program Files\WinHelloLanDemo`, rồi chạy lại service. Việc chuyển thư mục nguồn trong repo không tự thay đổi bản đang cài.
 
-TOTP đã quét trên điện thoại được mã hóa bằng Android Keystore. Gỡ app Android sẽ xóa dữ liệu app; hoặc dùng **Remove phone pairing from this PC** trong app để thu hồi public key trên PC và xóa secret/key cục bộ. Nếu mất điện thoại, đổi secret và ghép đôi máy mới bằng QR mới:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\reset-phone-enrollment.ps1
-```
-
-Lệnh reset xoay TOTP secret, thu hồi enrollment cũ, mở QR mới và khôi phục cấu hình trước đó nếu enrollment mới hết thời gian chờ.
-
-## Build thủ công
+## Build riêng
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-credential-provider.ps1
@@ -40,4 +28,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-lan-agen
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android.ps1
 ```
 
-APK debug: `android\app\build\outputs\apk\debug\app-debug.apk`.
+APK debug: `apps\android\app\build\outputs\apk\debug\app-debug.apk`.
+
+## Đặt lại ghép đôi hoặc gỡ cài đặt
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\reset-phone-enrollment.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-winhello.ps1
+```
+
+Uninstaller dừng và xóa service trước khi xóa Credential Provider, firewall rule, chứng chỉ và dữ liệu ghép đôi. Nếu service đang chờ Windows xóa, khởi động lại rồi chạy lại lệnh gỡ.

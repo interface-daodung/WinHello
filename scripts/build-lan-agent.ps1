@@ -13,5 +13,5 @@ if (-not (Test-Path $dotnet)) {
     throw '.NET 10 SDK was not found. Install Microsoft.DotNet.SDK.10 with Winget first.'
 }
 
-& $dotnet build (Join-Path $repoRoot 'src\WinHello.LanAgent\WinHello.LanAgent.csproj')
+& $dotnet build (Join-Path $repoRoot 'apps\lan-agent\WinHello.LanAgent.csproj')
 exit $LASTEXITCODE

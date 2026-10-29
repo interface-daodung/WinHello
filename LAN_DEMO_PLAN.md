@@ -1,5 +1,7 @@
 # Mục tiêu dự án WinHello: Android → Windows qua LAN
 
+> Tài liệu kế hoạch ban đầu, giữ lại để tham khảo. Trạng thái hiện tại và cấu trúc monorepo nằm trong [README.md](README.md) và [docs/architecture.md](docs/architecture.md).
+
 ## Mục tiêu
 
 Tạo demo đăng nhập Windows được khởi tạo từ widget Android, dùng chung LAN. Điện thoại tìm PC bằng broadcast UDP, quét QR enrollment khi cài, lưu TOTP an toàn, rồi xác nhận yêu cầu bằng TOTP và sinh trắc học.

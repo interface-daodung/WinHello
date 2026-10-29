@@ -102,12 +102,12 @@ if ($EnrollmentTimeoutSeconds -lt 30 -or $EnrollmentTimeoutSeconds -gt 900) {
 
 try {
     $repoRoot = Split-Path -Parent $PSScriptRoot
-    $agentProject = Join-Path $repoRoot 'src\WinHello.LanAgent\WinHello.LanAgent.csproj'
-    $publishDir = Join-Path $repoRoot 'src\WinHello.LanAgent\bin\Release\net10.0\win-x64\publish'
+    $agentProject = Join-Path $repoRoot 'apps\lan-agent\WinHello.LanAgent.csproj'
+    $publishDir = Join-Path $repoRoot 'apps\lan-agent\bin\Release\net10.0\win-x64\publish'
     $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
     $dotnetExe = if ($dotnetCommand) { $dotnetCommand.Source } else { 'C:\Program Files\dotnet\dotnet.exe' }
     if (-not (Test-Path -LiteralPath $dotnetExe)) { throw '.NET 10 SDK is required to install/build the LAN Agent.' }
-    $providerDll = Join-Path $repoRoot 'build\credential-provider-llvm-mingw\WinHelloCredentialProvider.dll'
+    $providerDll = Join-Path $repoRoot 'build\credential-provider-monorepo-llvm-mingw\WinHelloCredentialProvider.dll'
     & (Join-Path $PSScriptRoot 'build-credential-provider.ps1')
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $providerDll)) { throw 'Credential Provider build failed.' }
     & $dotnetExe publish $agentProject -c Release -r win-x64 --self-contained true -o $publishDir

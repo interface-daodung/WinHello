@@ -33,7 +33,7 @@ if ($ninjaPackage) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolchainFile = Join-Path $repoRoot 'cmake\llvm-mingw-toolchain.cmake'
-$buildDirectory = Join-Path $repoRoot 'build\credential-provider-llvm-mingw'
+$buildDirectory = Join-Path $repoRoot 'build\credential-provider-monorepo-llvm-mingw'
 
 if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
     $cmakeBin = 'C:\Program Files\CMake\bin'
@@ -42,7 +42,7 @@ if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
     }
 }
 
-cmake -S (Join-Path $repoRoot 'src\WindowsCredentialProvider') `
+cmake -S (Join-Path $repoRoot 'apps\credential-provider') `
     -B $buildDirectory -G Ninja "-DCMAKE_TOOLCHAIN_FILE=$toolchainFile"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

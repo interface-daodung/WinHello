@@ -8,6 +8,6 @@ The project targets API 36 and uses Android Gradle Plugin 8.13.2 with Java 17. Z
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android.ps1
 ```
 
-The checked-in script uses the local SDK and Gradle under `tools/` plus the installed Temurin JDK 17. The resulting debug APK is `android/app/build/outputs/apk/debug/app-debug.apk`. VS Code also exposes this as the **Build Android APK** task.
+The checked-in script uses the local SDK and Gradle under `tools/` plus the installed Temurin JDK 17. The resulting debug APK is `apps/android/app/build/outputs/apk/debug/app-debug.apk`. VS Code also exposes this as the **Build Android APK** task.
 
-On Android versions/devices where a strong fingerprint is unavailable, the system may offer another supported strong biometric or reject approval. BLE is deferred; no Bluetooth permission is declared. TOTP plus biometric-backed approval remains demo-only and does not unlock Windows.
+On Android versions/devices where a strong fingerprint is unavailable, the system may offer another supported strong biometric or reject approval. BLE is deferred; no Bluetooth permission is declared. The phone approval allows the Credential Provider to submit the stored Windows password; the phone itself does not send the password.
