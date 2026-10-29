@@ -18,6 +18,7 @@ import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,7 +75,38 @@ final class LanClient {
                 }
             }
         }
+        for (Pc pc : found.values()) {
+            if (hasEnrollment(pc.deviceId)) {
+                remember(pc);
+                try {
+                    pc.sessionState = getJson(pc, "/health", false).optString("sessionState", "unknown");
+                } catch (Exception ignored) {
+                    pc.sessionState = "unknown";
+                }
+            }
+        }
         return new ArrayList<>(found.values());
+    }
+
+    private void remember(Pc pc) {
+        context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
+                .putString("name_" + pc.deviceId, pc.name)
+                .putString("address_" + pc.deviceId, pc.address.getHostAddress())
+                .apply();
+    }
+
+    List<SavedPc> savedPcs() {
+        var prefs = context.getSharedPreferences("winhello", Context.MODE_PRIVATE);
+        List<SavedPc> saved = new ArrayList<>();
+        for (String key : prefs.getAll().keySet()) {
+            if (!key.startsWith("totp_")) continue;
+            String id = key.substring(5);
+            String name = prefs.getString("name_" + id, "Windows PC");
+            saved.add(new SavedPc(id, name, prefs.getString("address_" + id, ""),
+                    prefs.getBoolean("paired_" + id, false)));
+        }
+        Collections.sort(saved, (a, b) -> a.name.compareToIgnoreCase(b.name));
+        return saved;
     }
 
     boolean isPaired(Pc pc) {
@@ -140,6 +172,10 @@ final class LanClient {
             context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
                     .remove("enrolled_pc").apply();
         }
+        context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
+                .remove("name_" + pc.deviceId)
+                .remove("address_" + pc.deviceId)
+                .apply();
     }
 
     Challenge getPendingChallenge(Pc pc) throws Exception {
@@ -275,6 +311,7 @@ final class LanClient {
         final int httpsPort;
         final boolean pending;
         final String certificatePin;
+        String sessionState = "unknown";
 
         Pc(String deviceId, String name, InetAddress address, int httpsPort, boolean pending, String certificatePin) {
             this.deviceId = deviceId;
@@ -283,6 +320,20 @@ final class LanClient {
             this.httpsPort = httpsPort;
             this.pending = pending;
             this.certificatePin = certificatePin;
+        }
+    }
+
+    static final class SavedPc {
+        final String deviceId;
+        final String name;
+        final String address;
+        final boolean paired;
+
+        SavedPc(String deviceId, String name, String address, boolean paired) {
+            this.deviceId = deviceId;
+            this.name = name;
+            this.address = address;
+            this.paired = paired;
         }
     }
 

@@ -11,3 +11,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android.
 The checked-in script uses the local SDK and Gradle under `tools/` plus the installed Temurin JDK 17. The resulting debug APK is `apps/android/app/build/outputs/apk/debug/app-debug.apk`. VS Code also exposes this as the **Build Android APK** task.
 
 On Android versions/devices where a strong fingerprint is unavailable, the system may offer another supported strong biometric or reject approval. BLE is deferred; no Bluetooth permission is declared. The phone approval allows the Credential Provider to submit the stored Windows password; the phone itself does not send the password.
+
+The home screen keeps enrolled PCs visible while offline and refreshes LAN presence every five seconds while the screen is active. The `+` button opens a portrait QR scanner with a compact orange frame. The info icon explains the controls. Lock state is read from the PC's pinned HTTPS `/health` endpoint; if the Windows console state cannot be queried, the app shows only that the PC is online.

@@ -4,7 +4,7 @@ Transport: HTTPS on TCP 54431. The Android app pins the certificate obtained fro
 
 | Method | Path | Request | Successful response |
 | --- | --- | --- | --- |
-| GET | `/health` | None | Agent status, device ID, pairing and pending flags |
+| GET | `/health` | None | Agent status, device ID, pairing and pending flags, `sessionState` (`locked`, `unlocked`, or `unknown`) for the physical console |
 | POST | `/v1/pair` | `DeviceId`, `TotpCode`, `PublicKey` | `paired`, `deviceId` |
 | POST | `/v1/unpair` | `DeviceId`, `TotpCode` | `unpaired` |
 | GET | `/v1/demo/pending?deviceId=...` | Paired phone ID | `RequestId`, `DeviceId`, `Nonce`, `ExpiresAt` |

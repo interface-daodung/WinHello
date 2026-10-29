@@ -6,6 +6,7 @@ using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using QRCoder;
@@ -74,6 +75,7 @@ app.MapGet("/health", () => Results.Ok(new
     deviceId,
     pending = state.HasPendingRequest,
     paired = state.IsPaired,
+    sessionState = WindowsSessionState.Get(),
     windowsAuthentication = "not-integrated"
 }));
 
@@ -551,6 +553,43 @@ internal static class NamedPipeStatusServer
                 Console.Error.WriteLine($"Named pipe request failed: {ex.Message}");
             }
         }
+    }
+}
+
+internal static class WindowsSessionState
+{
+    [DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSQuerySessionInformation(
+        IntPtr server, uint sessionId, int infoClass, out IntPtr buffer, out int bytesReturned);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr buffer);
+
+    public static string Get()
+    {
+        if (!OperatingSystem.IsWindows()) return "unknown";
+        uint sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == uint.MaxValue) return "unknown";
+        const int wtsSessionInfoEx = 25;
+        if (!WTSQuerySessionInformation(IntPtr.Zero, sessionId, wtsSessionInfoEx,
+                out var buffer, out var bytesReturned)) return "unknown";
+        try
+        {
+            // WTSINFOEXW: Level at 0, 8-byte-aligned Data at 8;
+            // WTSINFOEX_LEVEL1_W.SessionFlags follows SessionId and SessionState.
+            if (bytesReturned < 20 || Marshal.ReadInt32(buffer, 0) != 1) return "unknown";
+            return Marshal.ReadInt32(buffer, 16) switch
+            {
+                0 => "locked",
+                1 => "unlocked",
+                _ => "unknown"
+            };
+        }
+        finally { WTSFreeMemory(buffer); }
     }
 }
 
