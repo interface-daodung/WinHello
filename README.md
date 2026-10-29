@@ -1,5 +1,7 @@
 # WinHello
 
+WinHello là phần mềm mã nguồn mở theo giấy phép [MIT](LICENSE).
+
 <p align="center"><img src="assets/winhello-logo.png" alt="WinHello logo" width="144"></p>
 
 WinHello cho phép duyệt yêu cầu đăng nhập Windows bằng sinh trắc học trên điện thoại Android khi hai thiết bị ở cùng mạng LAN. Điện thoại gửi TOTP và chữ ký của challenge; LAN Agent xác minh trước khi Credential Provider chuyển mật khẩu Windows đã lưu cho Winlogon.
@@ -17,6 +19,8 @@ Các bản phát hành nằm tại [GitHub Releases](https://github.com/interfac
 | `WinHello-verX.Y.Z-SHA256SUMS.txt` | SHA-256 để kiểm tra tệp tải xuống |
 
 Windows installer hiện chưa ký mã; Windows có thể hiện cảnh báo nhà phát hành chưa xác minh. APK hiện là bản debug để thử nghiệm, chưa phải bản production ký bằng release keystore.
+
+WinGet: đang chuẩn bị gửi gói `daodung183.WinHello` vào kho cộng đồng. Khi manifest được Microsoft chấp nhận, có thể cài bằng `winget install --id daodung183.WinHello -e`.
 
 ## Cài đặt nhanh
 
