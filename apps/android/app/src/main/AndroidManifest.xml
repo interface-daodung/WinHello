@@ -27,6 +27,12 @@
             android:screenOrientation="portrait"
             android:exported="false" />
 
+        <activity
+            android:name=".WidgetApprovalActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".SignInWidgetProvider"
             android:exported="true"

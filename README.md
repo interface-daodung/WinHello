@@ -35,6 +35,7 @@ Muốn gỡ WinHello khỏi một PC đã ghép đôi, hãy mở khóa Windows t
 | `winhello uninstall` | Gỡ Credential Provider, service và dữ liệu ghép đôi |
 
 Android giữ các PC đã ghép trong danh sách khi offline; màn hình chính tự dò LAN mỗi 5 giây. Trạng thái **Đã mở/Đã khóa** lấy từ Windows qua HTTPS có ghim chứng chỉ. Nút thông tin **ⓘ** trong app giải thích các thao tác.
+Khi app đóng, widget không quét nền. Nhấn **↻ Quét PC** trên widget để kiểm tra một lần; nếu PC có yêu cầu đăng nhập, widget hiện nút **Duyệt mở khóa** và mở thẳng xác nhận sinh trắc học.
 
 ## Cấu trúc mã nguồn
 

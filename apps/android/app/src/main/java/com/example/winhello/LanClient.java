@@ -25,6 +25,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -35,6 +40,7 @@ import javax.net.ssl.X509TrustManager;
 final class LanClient {
     static final String PHONE_ID_KEY = "phone_device_id";
     private static final int DISCOVERY_PORT = 45876;
+    private static final int HTTPS_PORT = 54431;
     private static final String PING = "WINHELLO_DISCOVER_V1";
     private static final String PONG = "WINHELLO_PONG_V1";
 
@@ -122,6 +128,53 @@ final class LanClient {
         }
         Collections.sort(saved, (a, b) -> a.name.compareToIgnoreCase(b.name));
         return saved;
+    }
+
+    Pc savedPc(String pcId) throws Exception {
+        for (SavedPc saved : savedPcs()) {
+            if (!saved.deviceId.equals(pcId) || !saved.paired || saved.address.isEmpty()) continue;
+            String pin = enrolledPin(pcId);
+            if (pin == null) return null;
+            return new Pc(pcId, saved.name, InetAddress.getByName(saved.address), HTTPS_PORT, false, pin);
+        }
+        return null;
+    }
+
+    List<Pc> pollSavedPcs() {
+        List<Pc> online = new ArrayList<>();
+        List<SavedPc> savedPcs = savedPcs();
+        if (savedPcs.isEmpty()) return online;
+        ExecutorService pool = Executors.newFixedThreadPool(Math.min(savedPcs.size(), 4));
+        try {
+            List<Callable<Pc>> checks = new ArrayList<>();
+            for (SavedPc saved : savedPcs) checks.add(() -> {
+                try {
+                    Pc stored = savedPc(saved.deviceId);
+                    if (stored == null) return null;
+                    JSONObject health = getJson(stored, "/health", false);
+                    if (!saved.deviceId.equals(health.optString("deviceId")) ||
+                            !health.optBoolean("paired", false)) return null;
+                    Pc pc = new Pc(stored.deviceId, stored.name, stored.address, stored.httpsPort,
+                            health.optBoolean("pending", false), stored.certificatePin);
+                    pc.sessionState = health.optString("sessionState", "unknown");
+                    return pc;
+                } catch (Exception error) {
+                    android.util.Log.w("WinHello", "Could not reach saved PC " + saved.deviceId + ": " + error);
+                    return null;
+                }
+            });
+            for (Future<Pc> result : pool.invokeAll(checks, 5, TimeUnit.SECONDS)) {
+                if (!result.isCancelled()) {
+                    Pc pc = result.get();
+                    if (pc != null) online.add(pc);
+                }
+            }
+        } catch (Exception error) {
+            android.util.Log.w("WinHello", "Widget scan failed: " + error);
+        } finally {
+            pool.shutdownNow();
+        }
+        return online;
     }
 
     boolean isPaired(Pc pc) {

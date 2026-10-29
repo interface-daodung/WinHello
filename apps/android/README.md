@@ -1,8 +1,8 @@
 # Android LAN demo
 
-Java app using Android's built-in `AppWidgetProvider` and `RemoteViews` APIs plus ZXing for QR scanning. Tapping its home-screen widget opens the app and starts one UDP broadcast discovery scan. During setup it scans a QR containing the PC ID, TOTP secret, and TLS certificate pin; it encrypts the secret at rest with Android Keystore and confirms enrollment using a current RFC 6238 code. For each waiting request, a strong biometric unlocks a per-PC Android Keystore signing key; the app sends both the TOTP code and signed challenge. It never transmits a fingerprint or Windows password.
+Java app using Android's built-in `AppWidgetProvider` and `RemoteViews` APIs plus ZXing for QR scanning. The widget's scan button performs one LAN discovery and pinned HTTPS check without opening the main app. When a paired PC has a pending request, the widget shows an approval button that launches a brief biometric confirmation screen. The widget does not poll while the app is closed. During setup the app scans a QR containing the PC ID, TOTP secret, and TLS certificate pin; it encrypts the secret at rest with Android Keystore and confirms enrollment using a current RFC 6238 code. For each waiting request, a strong biometric unlocks a per-PC Android Keystore signing key; the app sends both the TOTP code and signed challenge. It never transmits a fingerprint or Windows password.
 
-The project targets API 36 and uses Android Gradle Plugin 8.13.2 with Java 17. ZXing Android Embedded is the only added Android dependency. This workspace has JDK 17, Gradle 8.13, and Android SDK Platform 36/build tools installed. SDK licenses have been accepted.
+The project compiles against API 36, targets API 35, and uses Android Gradle Plugin 8.13.2 with Java 17. ZXing Android Embedded is the only added Android dependency. This workspace has JDK 17, Gradle 8.13, and Android SDK Platform 36/build tools installed. SDK licenses have been accepted.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-android.ps1

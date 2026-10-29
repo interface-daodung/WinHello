@@ -118,8 +118,8 @@ public final class MainActivity extends Activity {
 
         ImageButton info = iconButton(android.R.drawable.ic_menu_info_details, "Hướng dẫn");
         info.setOnClickListener(view -> new AlertDialog.Builder(this)
-                .setTitle("WinHello")
-                .setMessage("Nhấn + để quét QR TOTP trên PC. App tìm máy mỗi 5 giây khi màn hình mở. Khi PC yêu cầu đăng nhập, nhấn biểu tượng khóa rồi xác nhận vân tay. Nhấn biểu tượng thùng rác để xóa PC, kể cả khi offline. Nếu xóa khi offline, PC chưa thu hồi khóa ghép đôi. Trạng thái Tắt / không phản hồi được suy ra khi điện thoại dùng cùng SSID Wi-Fi đã lưu; Mất kết nối là khi đổi SSID. Cần quyền vị trí để đọc SSID.")
+                .setTitle("WinHello " + appVersion())
+                .setMessage("Nhấn + để quét QR TOTP trên PC. App tìm máy mỗi 5 giây khi màn hình mở. Khi app đóng, nhấn ↻ trên widget để quét LAN một lần; nếu có yêu cầu, nhấn Duyệt mở khóa trên widget rồi xác nhận vân tay. Widget không quét liên tục. Nhấn biểu tượng thùng rác để xóa PC, kể cả khi offline. Nếu xóa khi offline, PC chưa thu hồi khóa ghép đôi. Trạng thái Tắt / không phản hồi được suy ra khi điện thoại dùng cùng SSID Wi-Fi đã lưu; Mất kết nối là khi đổi SSID. Cần quyền vị trí để đọc SSID.")
                 .setPositiveButton("Đã hiểu", null).show());
         header.addView(info, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
@@ -158,6 +158,7 @@ public final class MainActivity extends Activity {
         background.execute(() -> {
             try {
                 List<LanClient.Pc> found = lanClient.discover();
+                SignInWidgetProvider.updateFromPoll(this, found);
                 runOnUiThread(() -> {
                     String currentSsid = lanClient.currentSsid();
                     boolean changed = online.size() != found.size() ||
@@ -251,7 +252,7 @@ public final class MainActivity extends Activity {
             devices.addView(card, cardLayout);
 
             ImageView pcIcon = new ImageView(this);
-            pcIcon.setImageResource(android.R.drawable.ic_menu_myplaces);
+            pcIcon.setImageResource(R.drawable.ic_pc);
             pcIcon.setColorFilter(connected ? Color.rgb(80, 211, 177) : Color.rgb(130, 145, 165));
             card.addView(pcIcon, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
@@ -487,5 +488,13 @@ public final class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private String appVersion() {
+        try {
+            return "v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 }
