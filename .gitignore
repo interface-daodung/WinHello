@@ -1,0 +1,9 @@
+.dotnet-cli/
+.nuget-packages/
+build/
+src/**/bin/
+src/**/obj/
+tools/
+android/.gradle/
+android/build/
+android/app/build/
