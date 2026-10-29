@@ -2,6 +2,8 @@ package com.example.winhello;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.BiometricPrompt;
@@ -48,6 +50,7 @@ public final class MainActivity extends Activity {
     private TextView status;
     private LinearLayout devices;
     private boolean scanInFlight;
+    private String lastSsid;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +71,11 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         showDevices();
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                !getPreferences(MODE_PRIVATE).getBoolean("ssid_permission_asked", false)) {
+            getPreferences(MODE_PRIVATE).edit().putBoolean("ssid_permission_asked", true).apply();
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1001);
+        }
         refreshHandler.removeCallbacks(refresh);
         refreshHandler.post(refresh);
     }
@@ -111,7 +119,7 @@ public final class MainActivity extends Activity {
         ImageButton info = iconButton(android.R.drawable.ic_menu_info_details, "Hướng dẫn");
         info.setOnClickListener(view -> new AlertDialog.Builder(this)
                 .setTitle("WinHello")
-                .setMessage("Nhấn + để quét QR TOTP trên PC. Máy đã ghép luôn nằm trong danh sách. App tự tìm máy trên LAN mỗi 5 giây khi màn hình này mở. Khi PC yêu cầu đăng nhập, nhấn biểu tượng khóa và xác nhận vân tay. Nhấn giữ thẻ PC khi đang online để xóa ghép đôi. Máy tắt hoặc mất kết nối vẫn được giữ trong danh sách.")
+                .setMessage("Nhấn + để quét QR TOTP trên PC. App tìm máy mỗi 5 giây khi màn hình mở. Khi PC yêu cầu đăng nhập, nhấn biểu tượng khóa rồi xác nhận vân tay. Nhấn biểu tượng thùng rác để xóa PC, kể cả khi offline. Nếu xóa khi offline, PC chưa thu hồi khóa ghép đôi. Trạng thái Tắt / không phản hồi được suy ra khi điện thoại dùng cùng SSID Wi-Fi đã lưu; Mất kết nối là khi đổi SSID. Cần quyền vị trí để đọc SSID.")
                 .setPositiveButton("Đã hiểu", null).show());
         header.addView(info, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
@@ -151,7 +159,9 @@ public final class MainActivity extends Activity {
             try {
                 List<LanClient.Pc> found = lanClient.discover();
                 runOnUiThread(() -> {
-                    boolean changed = online.size() != found.size();
+                    String currentSsid = lanClient.currentSsid();
+                    boolean changed = online.size() != found.size() ||
+                            !java.util.Objects.equals(lastSsid, currentSsid);
                     for (LanClient.Pc pc : found) {
                         LanClient.Pc old = online.get(pc.deviceId);
                         if (old == null || old.pending != pc.pending ||
@@ -160,13 +170,17 @@ public final class MainActivity extends Activity {
                     }
                     online.clear();
                     for (LanClient.Pc pc : found) online.put(pc.deviceId, pc);
+                    lastSsid = currentSsid;
                     scanInFlight = false;
                     if (changed) showDevices();
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
-                    boolean changed = !online.isEmpty();
+                    String currentSsid = lanClient.currentSsid();
+                    boolean changed = !online.isEmpty() ||
+                            !java.util.Objects.equals(lastSsid, currentSsid);
                     online.clear();
+                    lastSsid = currentSsid;
                     scanInFlight = false;
                     if (changed) showDevices();
                 });
@@ -224,6 +238,7 @@ public final class MainActivity extends Activity {
             return;
         }
         status.setText(saved.size() + " PC đã lưu  •  tự cập nhật mỗi 5 giây");
+        String currentSsid = lanClient.currentSsid();
         for (LanClient.SavedPc item : saved) {
             LanClient.Pc pc = online.get(item.deviceId);
             boolean connected = pc != null;
@@ -253,7 +268,9 @@ public final class MainActivity extends Activity {
             labels.addView(name);
 
             TextView detail = new TextView(this);
-            detail.setText(!connected ? "●  Tắt / không kết nối" :
+            String offlineState = currentSsid == null || item.ssid == null ? "●  Không kết nối" :
+                    currentSsid.equals(item.ssid) ? "●  Tắt / không phản hồi" : "●  Mất kết nối";
+            detail.setText(!connected ? offlineState :
                     !item.paired ? "●  Chưa ghép đôi" :
                     pc.pending ? "●  Chờ mở khóa" :
                     "locked".equals(pc.sessionState) ? "●  Đã khóa" :
@@ -273,16 +290,11 @@ public final class MainActivity extends Activity {
                 });
                 card.addView(action, new LinearLayout.LayoutParams(dp(44), dp(44)));
             }
+            ImageButton remove = iconButton(android.R.drawable.ic_menu_delete, "Xóa " + item.name);
+            remove.setOnClickListener(view -> confirmForget(item, pc));
+            card.addView(remove, new LinearLayout.LayoutParams(dp(44), dp(44)));
             card.setOnLongClickListener(view -> {
-                if (pc == null) {
-                    Toast.makeText(this, "Kết nối PC để thu hồi ghép đôi", Toast.LENGTH_SHORT).show();
-                } else {
-                    new AlertDialog.Builder(this)
-                            .setTitle("Xóa ghép đôi?")
-                            .setMessage("Thu hồi khóa trên PC và xóa TOTP trên điện thoại.")
-                            .setNegativeButton("Hủy", null)
-                            .setPositiveButton("Xóa", (dialog, which) -> forgetPc(pc)).show();
-                }
+                confirmForget(item, pc);
                 return true;
             });
         }
@@ -320,13 +332,60 @@ public final class MainActivity extends Activity {
             }
         });
     }
+
+    private void confirmForget(LanClient.SavedPc item, LanClient.Pc pc) {
+        new AlertDialog.Builder(this)
+                .setTitle("Xóa " + item.name + "?")
+                .setMessage(pc == null
+                        ? "Xóa dữ liệu trên điện thoại sau xác nhận vân tay. PC đang offline nên khóa đã ghép trên PC chưa được thu hồi."
+                        : "Xác nhận vân tay để thu hồi ghép đôi trên PC và xóa dữ liệu trên điện thoại.")
+                .setNegativeButton("Hủy", null)
+                .setPositiveButton("Xác nhận vân tay", (dialog, which) -> authenticateForget(item, pc))
+                .show();
+    }
+
+    private void authenticateForget(LanClient.SavedPc item, LanClient.Pc pc) {
+        BiometricManager biometricManager = getSystemService(BiometricManager.class);
+        if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                != BiometricManager.BIOMETRIC_SUCCESS) {
+            status.setText("Cần cài đặt vân tay hoặc sinh trắc học mạnh để xóa PC.");
+            return;
+        }
+        BiometricPrompt prompt = new BiometricPrompt.Builder(this)
+                .setTitle("Xác nhận xóa " + item.name)
+                .setSubtitle("Dùng vân tay để xác nhận")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .setNegativeButton("Hủy", getMainExecutor(), (dialog, which) -> { })
+                .setConfirmationRequired(true)
+                .build();
+        prompt.authenticate(new CancellationSignal(), getMainExecutor(),
+                new BiometricPrompt.AuthenticationCallback() {
+                    @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                        if (pc != null) forgetPc(pc);
+                        else {
+                            background.execute(() -> {
+                                try {
+                                    lanClient.forgetLocal(item.deviceId);
+                                    runOnUiThread(() -> {
+                                        online.remove(item.deviceId);
+                                        showDevices();
+                                        status.setText("Đã xóa trên điện thoại. PC chưa thu hồi khóa ghép đôi.");
+                                    });
+                                } catch (Exception error) {
+                                    runOnUiThread(() -> status.setText("Không thể xóa PC: " + error.getMessage()));
+                                }
+                            });
+                        }
+                    }
+                });
+    }
     private void approvePending(LanClient.Pc pc) {
         status.setText("Checking for a pending PC request…");
         background.execute(() -> {
             try {
                 LanClient.Challenge challenge = lanClient.getPendingChallenge(pc);
                 if (challenge == null) {
-                    runOnUiThread(() -> status.setText("No pending request. Select Request phone approval on the Windows tile, then scan again."));
+                    runOnUiThread(() -> status.setText("No pending request. Select WinHello Phone on the Windows sign-in screen, then try again."));
                     return;
                 }
                 Signature signature = PhoneSigningKey.newSignature(lanClient.keyAlias(pc));

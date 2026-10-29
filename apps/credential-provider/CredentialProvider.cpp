@@ -39,12 +39,13 @@ namespace
     constexpr DWORD kFieldSubmit = 3;
     constexpr DWORD kFieldCount  = 4;
     volatile LONG g_moduleReferences = 0;
+    HINSTANCE g_moduleInstance = nullptr;
 
     const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR kFieldDescriptors[kFieldCount] = {
         {kFieldImage,  CPFT_TILE_IMAGE,     const_cast<LPWSTR>(L"WinHello Phone icon"),       GUID_NULL},
         {kFieldTitle,  CPFT_LARGE_TEXT,     const_cast<LPWSTR>(L"WinHello Phone"),            GUID_NULL},
-        {kFieldStatus, CPFT_SMALL_TEXT,     const_cast<LPWSTR>(L"LAN service is ready"),      GUID_NULL},
-        {kFieldSubmit, CPFT_SUBMIT_BUTTON,  const_cast<LPWSTR>(L"Unlock with phone approval"), GUID_NULL}
+        {kFieldStatus, CPFT_SMALL_TEXT,     const_cast<LPWSTR>(L"Chờ điện thoại xác nhận"),   GUID_NULL},
+        {kFieldSubmit, CPFT_SUBMIT_BUTTON,  const_cast<LPWSTR>(L"Đăng nhập"),                 GUID_NULL}
     };
 
     /* ── Helpers ── */
@@ -333,6 +334,12 @@ namespace
             if (autoLogon == nullptr)
                 return E_POINTER;
             *autoLogon = FALSE;
+
+            // Selecting this sign-in option starts (or reuses) the pending request.
+            // START is idempotent in the LAN Agent, so selecting the tile again
+            // does not replace an approval that is already in progress.
+            wchar_t result[512]{};
+            QueryLanAgent(L"START", result, ARRAYSIZE(result));
             return S_OK;
         }
 
@@ -366,20 +373,20 @@ namespace
                 if (QueryLanAgent(L"STATUS", status, ARRAYSIZE(status)))
                 {
                     if (wcsstr(status, L"APPROVED|") != nullptr)
-                        *value = DuplicateString(L"\x2705 Phone approved. Click the arrow to sign in.");
+                        *value = DuplicateString(L"Điện thoại đã xác nhận. Đang đăng nhập…");
                     else if (wcsstr(status, L"PENDING|") != nullptr)
-                        *value = DuplicateString(L"Waiting for phone approval. Tap Approve on your phone.");
+                        *value = DuplicateString(L"Mở app và xác nhận bằng vân tay.");
                     else
-                        *value = DuplicateString(L"Ready. Click the arrow to request phone approval.");
+                        *value = DuplicateString(L"Chọn WinHello để gửi yêu cầu.");
                 }
                 else
                 {
-                    *value = DuplicateString(L"LAN agent is starting\x2026 Click arrow to retry.");
+                    *value = DuplicateString(L"Đang kết nối dịch vụ WinHello…");
                 }
                 break;
             }
             case kFieldSubmit:
-                *value = DuplicateString(L"Unlock with phone approval");
+                *value = DuplicateString(L"Đăng nhập");
                 break;
             default:
                 return E_INVALIDARG;
@@ -395,32 +402,8 @@ namespace
             if (fieldId != kFieldImage)
                 return E_INVALIDARG;
 
-            BITMAPINFO info{};
-            info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-            info.bmiHeader.biWidth = 64;
-            info.bmiHeader.biHeight = -64;
-            info.bmiHeader.biPlanes = 1;
-            info.bmiHeader.biBitCount = 32;
-            info.bmiHeader.biCompression = BI_RGB;
-            void* bits = nullptr;
-            HBITMAP image = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
-            if (image == nullptr || bits == nullptr)
-                return E_OUTOFMEMORY;
-
-            auto* pixels = static_cast<DWORD*>(bits);
-            for (int y = 0; y < 64; ++y)
-            {
-                for (int x = 0; x < 64; ++x)
-                {
-                    const bool phone = x >= 19 && x <= 44 && y >= 10 && y <= 53;
-                    const bool screen = x >= 22 && x <= 41 && y >= 16 && y <= 45;
-                    const bool button = x >= 30 && x <= 33 && y >= 48 && y <= 50;
-                    pixels[y * 64 + x] = button || (phone && !screen) ? 0xFFFFFFFF :
-                                         screen ? 0xFF244978 : 0xFF1A70C8;
-                }
-            }
-            *bitmap = image;
-            return S_OK;
+            *bitmap = LoadBitmapW(g_moduleInstance, MAKEINTRESOURCEW(101));
+            return *bitmap == nullptr ? HRESULT_FROM_WIN32(GetLastError()) : S_OK;
         }
 
         HRESULT STDMETHODCALLTYPE GetCheckboxValue(DWORD, BOOL* checked, LPWSTR* label) override
@@ -475,7 +458,7 @@ namespace
             if (!QueryLanAgent(L"START", result, ARRAYSIZE(result)))
             {
                 *response   = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
-                *statusText = DuplicateString(L"Connecting to WinHello service\x2026 Click again.");
+                *statusText = DuplicateString(L"Chưa kết nối được dịch vụ. Hãy thử lại.");
                 *statusIcon = CPSI_WARNING;
                 return *statusText ? S_OK : E_OUTOFMEMORY;
             }
@@ -483,7 +466,7 @@ namespace
             if (wcsstr(result, L"APPROVED|") != result)
             {
                 *response   = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
-                *statusText = DuplicateString(L"Request sent to phone. Open the app, approve with fingerprint, then click arrow.");
+                *statusText = DuplicateString(L"Đã gửi yêu cầu. Xác nhận vân tay trên điện thoại.");
                 *statusIcon = CPSI_NONE;
                 return *statusText ? S_OK : E_OUTOFMEMORY;
             }
@@ -957,6 +940,9 @@ extern "C" HRESULT STDMETHODCALLTYPE DllCanUnloadNow()
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH)
+    {
+        g_moduleInstance = instance;
         DisableThreadLibraryCalls(instance);
+    }
     return TRUE;
 }

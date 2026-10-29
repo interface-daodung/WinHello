@@ -1,6 +1,9 @@
 package com.example.winhello;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.Manifest;
+import android.net.wifi.WifiManager;
 
 import org.json.JSONObject;
 
@@ -89,10 +92,22 @@ final class LanClient {
     }
 
     private void remember(Pc pc) {
-        context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
+        var editor = context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
                 .putString("name_" + pc.deviceId, pc.name)
-                .putString("address_" + pc.deviceId, pc.address.getHostAddress())
-                .apply();
+                .putString("address_" + pc.deviceId, pc.address.getHostAddress());
+        String ssid = currentSsid();
+        if (ssid != null) editor.putString("ssid_" + pc.deviceId, ssid);
+        editor.apply();
+    }
+
+    String currentSsid() {
+        if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+            return null;
+        WifiManager wifi = context.getSystemService(WifiManager.class);
+        if (wifi == null || !wifi.isWifiEnabled() || wifi.getConnectionInfo() == null) return null;
+        String ssid = wifi.getConnectionInfo().getSSID();
+        if (ssid == null || ssid.isEmpty() || "<unknown ssid>".equalsIgnoreCase(ssid)) return null;
+        return ssid.replaceAll("^\"|\"$", "");
     }
 
     List<SavedPc> savedPcs() {
@@ -103,7 +118,7 @@ final class LanClient {
             String id = key.substring(5);
             String name = prefs.getString("name_" + id, "Windows PC");
             saved.add(new SavedPc(id, name, prefs.getString("address_" + id, ""),
-                    prefs.getBoolean("paired_" + id, false)));
+                    prefs.getBoolean("paired_" + id, false), prefs.getString("ssid_" + id, null)));
         }
         Collections.sort(saved, (a, b) -> a.name.compareToIgnoreCase(b.name));
         return saved;
@@ -115,7 +130,11 @@ final class LanClient {
     }
 
     String keyAlias(Pc pc) {
-        return "winhello_" + pc.deviceId.replace("-", "");
+        return keyAlias(pc.deviceId);
+    }
+
+    String keyAlias(String pcId) {
+        return "winhello_" + pcId.replace("-", "");
     }
 
     void saveEnrollment(String pcId, String secret, String certificatePin) throws Exception {
@@ -175,7 +194,19 @@ final class LanClient {
         context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
                 .remove("name_" + pc.deviceId)
                 .remove("address_" + pc.deviceId)
+                .remove("ssid_" + pc.deviceId)
                 .apply();
+    }
+
+    void forgetLocal(String pcId) throws Exception {
+        PhoneSigningKey.delete(keyAlias(pcId));
+        TotpSecretStore.delete(context, pcId);
+        var editor = context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
+                .remove("name_" + pcId)
+                .remove("address_" + pcId)
+                .remove("ssid_" + pcId);
+        if (pcId.equals(enrolledDeviceId())) editor.remove("enrolled_pc");
+        editor.apply();
     }
 
     Challenge getPendingChallenge(Pc pc) throws Exception {
@@ -328,12 +359,14 @@ final class LanClient {
         final String name;
         final String address;
         final boolean paired;
+        final String ssid;
 
-        SavedPc(String deviceId, String name, String address, boolean paired) {
+        SavedPc(String deviceId, String name, String address, boolean paired, String ssid) {
             this.deviceId = deviceId;
             this.name = name;
             this.address = address;
             this.paired = paired;
+            this.ssid = ssid;
         }
     }
 
