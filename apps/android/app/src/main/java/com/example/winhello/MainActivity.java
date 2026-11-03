@@ -460,41 +460,18 @@ public final class MainActivity extends Activity {
         labels.setPadding(dp(12), 0, dp(6), 0);
         card.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
 
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        labels.addView(titleRow);
-
         TextView title = new TextView(this);
         title.setText("MasterKeyVault");
         title.setTextColor(Color.WHITE);
         title.setTextSize(17);
         title.setTypeface(null, Typeface.BOLD);
-        titleRow.addView(title);
-
-        TextView badge = new TextView(this);
-        badge.setText("MKV Key");
-        badge.setTextColor(Color.rgb(251, 191, 36));
-        badge.setTextSize(11);
-        badge.setTypeface(null, Typeface.BOLD);
-        badge.setPadding(dp(6), dp(2), dp(6), dp(2));
-        badge.setBackground(round(Color.argb(50, 245, 158, 11), 8));
-        LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
-        badgeLp.leftMargin = dp(8);
-        titleRow.addView(badge, badgeLp);
+        labels.addView(title);
 
         TextView totpCode = new TextView(this);
         totpCode.setTextSize(18);
         totpCode.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
         totpCode.setPadding(0, dp(4), 0, 0);
         labels.addView(totpCode);
-
-        TextView sub = new TextView(this);
-        sub.setText("Bảo vệ DPAPI • Quét QR mở khóa");
-        sub.setTextColor(Color.rgb(100, 116, 139));
-        sub.setTextSize(12);
-        sub.setPadding(0, dp(2), 0, 0);
-        labels.addView(sub);
 
         TotpCountdownRingView countdownRing = new TotpCountdownRingView(this);
         card.addView(countdownRing, new LinearLayout.LayoutParams(dp(36), dp(36)));
