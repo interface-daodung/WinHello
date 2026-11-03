@@ -6,7 +6,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$packageDir = Join-Path $repoRoot 'dist\winhello-windows'
 $installDir = Join-Path $env:ProgramFiles 'WinHelloLanDemo'
+$cliInstallDir = Join-Path $env:ProgramFiles 'WinHello'
 $dataDir = Join-Path $env:ProgramData 'WinHelloLanDemo'
 $providerDll = Join-Path $repoRoot 'build\credential-provider-monorepo-llvm-mingw\WinHelloCredentialProvider.dll'
 $agentProject = Join-Path $repoRoot 'apps\lan-agent\WinHello.LanAgent.csproj'
@@ -32,6 +34,19 @@ Stop-Process -Name LogonUI -Force -ErrorAction SilentlyContinue
 
 Write-Host 'Copying updated files to Program Files...'
 Copy-Item -Path (Join-Path $publishDir '*') -Destination $installDir -Recurse -Force
+New-Item -ItemType Directory -Path (Join-Path $cliInstallDir 'cli') -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'cli\winhello.ps1') -Destination (Join-Path $cliInstallDir 'cli\winhello.ps1') -Force
+Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $cliInstallDir 'VERSION') -Force
+
+# Also refresh the per-user CLI copy installed by install-cli.ps1. Program Files
+# is earlier in PATH for normal installer installs, so keep both copies current.
+$userInstallDir = Join-Path $env:LOCALAPPDATA 'Programs\WinHello'
+if (Test-Path -LiteralPath $userInstallDir) {
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'cli\winhello.ps1') -Destination (Join-Path $userInstallDir 'cli\winhello.ps1') -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $userInstallDir 'VERSION') -Force
+    $builtAgent = Join-Path $packageDir 'bin\agent\WinHello.LanAgent.exe'
+    if (Test-Path -LiteralPath $builtAgent) { Copy-Item -LiteralPath $builtAgent -Destination (Join-Path $userInstallDir 'bin\agent\WinHello.LanAgent.exe') -Force }
+}
 
 $destDll = Join-Path $installDir 'WinHelloCredentialProvider.dll'
 try {

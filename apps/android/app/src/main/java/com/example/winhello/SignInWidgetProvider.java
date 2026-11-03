@@ -84,6 +84,7 @@ public final class SignInWidgetProvider extends AppWidgetProvider {
         for (LanClient.Pc pc : pcs) if (pc.pending) { pending = pc; break; }
         String pendingId = pending == null ? null : pending.deviceId;
         String pendingName = pending == null ? "PC" : pending.name;
+        boolean fastPending = pending != null && pending.fastActive();
         int onlineCount = pcs.size();
         LanClient.Pc onlyPc = onlineCount == 1 ? pcs.get(0) : null;
         String version;
@@ -107,7 +108,16 @@ public final class SignInWidgetProvider extends AppWidgetProvider {
                     : onlineCount + " PC trên LAN • chưa có yêu cầu");
             views.setTextColor(R.id.widget_status, pendingId != null ? 0xFF64E0C7 : 0xFFA8BED6);
             views.setViewVisibility(R.id.widget_approve, pendingId == null || scanning ? View.GONE : View.VISIBLE);
+            views.setContentDescription(R.id.widget_approve, fastPending ? "Mở nhanh PC" : "Duyệt mở khóa PC bằng vân tay");
+            views.setTextViewText(R.id.widget_approve_text, fastPending ? "Mở nhanh" : "Duyệt mở khóa");
+            views.setImageViewResource(R.id.widget_approve_icon, fastPending ? R.drawable.ic_bolt : R.drawable.ic_fingerprint);
+            boolean showApprove = pendingId != null && !scanning;
+            views.setViewVisibility(R.id.widget_refresh, showApprove ? View.GONE : View.VISIBLE);
+            views.setViewVisibility(R.id.widget_refresh_compact, showApprove ? View.VISIBLE : View.GONE);
+            views.setContentDescription(R.id.widget_refresh, "Quét PC ngay");
+            views.setContentDescription(R.id.widget_refresh_compact, "Quét PC ngay");
             views.setOnClickPendingIntent(R.id.widget_refresh, refresh);
+            views.setOnClickPendingIntent(R.id.widget_refresh_compact, refresh);
             if (pendingId != null) {
                 Intent approve = new Intent(context, WidgetApprovalActivity.class)
                         .setAction(WidgetApprovalActivity.ACTION_APPROVE)

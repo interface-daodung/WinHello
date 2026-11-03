@@ -3,6 +3,8 @@
 build/
 dist/
 publish/
+.worker-control-secret
+.wrangler/
 src/**/bin/
 src/**/obj/
 tools/
@@ -14,3 +16,15 @@ apps/android/build/
 apps/android/app/build/
 apps/lan-agent/bin/
 apps/lan-agent/obj/
+
+# Environment & Signing Secrets (NEVER COMMIT)
+.env
+*.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+apps/android/keystore/
+keystore/

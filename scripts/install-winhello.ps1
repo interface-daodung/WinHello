@@ -160,12 +160,14 @@ try {
 
     $credPath = Join-Path $dataDir 'credential.enc'
     if (-not $WindowsPassword) {
-        $secPass = Read-Host -Prompt "Enter Windows password for $WindowsDomain\$WindowsUsername to enable REAL unlock (leave empty to skip)" -AsSecureString
+        $secPass = Read-Host -Prompt "Enter Windows password for $WindowsDomain\$WindowsUsername to finish enrollment" -AsSecureString
         $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secPass)
         $WindowsPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
         [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        if ([string]::IsNullOrWhiteSpace($WindowsPassword)) { throw 'A Windows password is required to enroll. No WinHello configuration was installed.' }
     }
 
+    if ([string]::IsNullOrWhiteSpace($WindowsPassword)) { throw 'A Windows password is required to enroll.' }
     if ($WindowsPassword) {
         $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($certificate)
         $credPayload = [System.Text.Encoding]::UTF8.GetBytes("$WindowsDomain|$WindowsUsername|$WindowsPassword")
@@ -199,7 +201,7 @@ try {
         -Protocol TCP -LocalPort 54431 -Profile Private | Out-Null
     Start-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-    Write-Host 'Scan the QR above in the Android app now. Waiting for TOTP enrollment confirmation...'
+    Write-Host 'In the Android app, scan the QR above and confirm pairing. Waiting for the app confirmation...'
     $deadline = (Get-Date).AddSeconds($EnrollmentTimeoutSeconds)
     $enrolled = $false
     while ((Get-Date) -lt $deadline) {
@@ -227,9 +229,8 @@ try {
         ProviderClsid = $clsid
         InstalledAtUtc = [DateTime]::UtcNow.ToString('O')
     } | ConvertTo-Json | Set-Content -LiteralPath $markerPath -Encoding UTF8
-    Write-Host 'WinHello LAN demo installed and phone enrollment confirmed.'
-    Write-Host 'The extra tile only records TOTP/phone approval. It does not unlock a Windows account.'
-    Write-Host 'To remove all demo components and enrollment data, run scripts\uninstall-winhello.ps1 as Administrator.'
+    Write-Host 'WinHello setup and phone pairing are complete. You can close this window.' -ForegroundColor Green
+    Write-Host 'Note: this version records phone approval but does not yet sign in to or unlock your Windows account.' -ForegroundColor Yellow
 }
 catch {
     $installError = $_

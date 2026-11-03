@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.Manifest;
 import android.net.wifi.WifiManager;
+import android.os.Build;
 
 import org.json.JSONObject;
 
@@ -88,7 +89,12 @@ final class LanClient {
             if (hasEnrollment(pc.deviceId)) {
                 remember(pc);
                 try {
-                    pc.sessionState = getJson(pc, "/health", false).optString("sessionState", "unknown");
+                    JSONObject health = getJson(pc, "/health", false);
+                    pc.sessionState = health.optString("sessionState", "unknown");
+                    pc.fastExpiresAtUtc = health.optJSONObject("fastUnlock") == null ? "" :
+                            health.optJSONObject("fastUnlock").optString("expiresAtUtc", "");
+                    pc.pairedAtUtc = health.optString("pairedAtUtc", "");
+                    remember(pc);
                 } catch (Exception ignored) {
                     pc.sessionState = "unknown";
                 }
@@ -101,6 +107,7 @@ final class LanClient {
         var editor = context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
                 .putString("name_" + pc.deviceId, pc.name)
                 .putString("address_" + pc.deviceId, pc.address.getHostAddress());
+        if (!pc.pairedAtUtc.isEmpty()) editor.putString("paired_at_" + pc.deviceId, pc.pairedAtUtc);
         String ssid = currentSsid();
         if (ssid != null) editor.putString("ssid_" + pc.deviceId, ssid);
         editor.apply();
@@ -124,7 +131,8 @@ final class LanClient {
             String id = key.substring(5);
             String name = prefs.getString("name_" + id, "Windows PC");
             saved.add(new SavedPc(id, name, prefs.getString("address_" + id, ""),
-                    prefs.getBoolean("paired_" + id, false), prefs.getString("ssid_" + id, null)));
+                    prefs.getBoolean("paired_" + id, false), prefs.getString("ssid_" + id, null),
+                    prefs.getString("paired_at_" + id, "")));
         }
         Collections.sort(saved, (a, b) -> a.name.compareToIgnoreCase(b.name));
         return saved;
@@ -157,6 +165,10 @@ final class LanClient {
                     Pc pc = new Pc(stored.deviceId, stored.name, stored.address, stored.httpsPort,
                             health.optBoolean("pending", false), stored.certificatePin);
                     pc.sessionState = health.optString("sessionState", "unknown");
+                    pc.fastExpiresAtUtc = health.optJSONObject("fastUnlock") == null ? "" :
+                            health.optJSONObject("fastUnlock").optString("expiresAtUtc", "");
+                    pc.pairedAtUtc = health.optString("pairedAtUtc", "");
+                    remember(pc);
                     return pc;
                 } catch (Exception error) {
                     android.util.Log.w("WinHello", "Could not reach saved PC " + saved.deviceId + ": " + error);
@@ -218,13 +230,15 @@ final class LanClient {
             throw new IllegalStateException("The PC certificate pin differs from the setup QR.");
         JSONObject body = new JSONObject();
         body.put("deviceId", phoneDeviceId());
+        body.put("deviceName", Build.MANUFACTURER + " " + Build.MODEL);
         body.put("totpCode", TotpSecretStore.code(secret, System.currentTimeMillis() / 1000));
         body.put("publicKey", PhoneSigningKey.publicKeyBase64(keyAlias(pc)));
         JSONObject result = postJson(pc, "/v1/pair", body);
         if (!result.optBoolean("paired", false))
             throw new IllegalStateException("The PC rejected the TOTP enrollment code. Check phone/PC time and wait for the next code.");
         context.getSharedPreferences("winhello", Context.MODE_PRIVATE)
-                .edit().putBoolean("paired_" + pc.deviceId, true).apply();
+                .edit().putBoolean("paired_" + pc.deviceId, true)
+                .putString("paired_at_" + pc.deviceId, java.time.Instant.now().toString()).apply();
     }
 
     void unpair(Pc pc) throws Exception {
@@ -240,6 +254,7 @@ final class LanClient {
         String active = enrolledDeviceId();
         TotpSecretStore.delete(context, pc.deviceId);
         PhoneSigningKey.delete(keyAlias(pc));
+        FastPhoneKey.delete(pc.deviceId);
         if (pc.deviceId.equals(active)) {
             context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
                     .remove("enrolled_pc").apply();
@@ -248,16 +263,19 @@ final class LanClient {
                 .remove("name_" + pc.deviceId)
                 .remove("address_" + pc.deviceId)
                 .remove("ssid_" + pc.deviceId)
+                .remove("paired_at_" + pc.deviceId)
                 .apply();
     }
 
     void forgetLocal(String pcId) throws Exception {
         PhoneSigningKey.delete(keyAlias(pcId));
+        FastPhoneKey.delete(pcId);
         TotpSecretStore.delete(context, pcId);
         var editor = context.getSharedPreferences("winhello", Context.MODE_PRIVATE).edit()
                 .remove("name_" + pcId)
                 .remove("address_" + pcId)
-                .remove("ssid_" + pcId);
+                .remove("ssid_" + pcId)
+                .remove("paired_at_" + pcId);
         if (pcId.equals(enrolledDeviceId())) editor.remove("enrolled_pc");
         editor.apply();
     }
@@ -273,17 +291,67 @@ final class LanClient {
                 result.getString("nonce"));
     }
 
+    boolean refreshFastStatus(Pc pc) throws Exception {
+        JSONObject health = getJson(pc, "/health", false);
+        if (!pc.deviceId.equals(health.optString("deviceId")) || !health.optBoolean("paired", false)) return false;
+        JSONObject fast = health.optJSONObject("fastUnlock");
+        pc.fastExpiresAtUtc = fast == null ? "" : fast.optString("expiresAtUtc", "");
+        return fast != null && fast.optBoolean("active", false) && pc.fastActive();
+    }
+
     void approve(Pc pc, Challenge challenge, byte[] signature) throws Exception {
+        approve(pc, challenge, signature, false);
+    }
+
+    void approve(Pc pc, Challenge challenge, byte[] signature, boolean fast) throws Exception {
         String secret = TotpSecretStore.load(context, pc.deviceId);
         if (secret == null) throw new IllegalStateException("This PC has no saved enrollment QR.");
         JSONObject body = new JSONObject();
         body.put("deviceId", phoneDeviceId());
         body.put("requestId", challenge.requestId);
         body.put("signature", Base64.getEncoder().encodeToString(signature));
+        body.put("fast", fast);
         body.put("totpCode", TotpSecretStore.code(secret, System.currentTimeMillis() / 1000));
         JSONObject result = postJson(pc, "/v1/demo/approve", body);
         if (!result.optBoolean("approved", false))
             throw new IllegalStateException("The PC rejected this approval.");
+    }
+
+    String activateFast(Pc pc, String ticket, int days, String fastPublicKey, byte[] signature) throws Exception {
+        String secret = TotpSecretStore.load(context, pc.deviceId);
+        if (secret == null || !isPaired(pc)) throw new IllegalStateException("This phone is not paired with the PC.");
+        JSONObject body = new JSONObject();
+        body.put("deviceId", phoneDeviceId());
+        body.put("ticket", ticket);
+        body.put("days", days);
+        body.put("fastPublicKey", fastPublicKey);
+        body.put("signature", Base64.getEncoder().encodeToString(signature));
+        body.put("totpCode", TotpSecretStore.code(secret, System.currentTimeMillis() / 1000));
+        return postJson(pc, "/v1/fast-unlock/activate", body).getString("expiresAtUtc");
+    }
+
+    void unlockVault(String endpointUrl, String pin, String token, String masterKey) throws Exception {
+        URL url = new URL(endpointUrl);
+        HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(5000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+        connection.setRequestProperty("X-MKV-Token", token);
+        connection.setSSLSocketFactory(pinContext(pin).getSocketFactory());
+        connection.setHostnameVerifier((hostname, session) -> true);
+
+        JSONObject body = new JSONObject();
+        body.put("masterKey", masterKey);
+        byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(bytes);
+        }
+        JSONObject result = readJson(connection, false);
+        if (!result.optBoolean("unlocked", false)) {
+            throw new IllegalStateException(result.optString("error", "PC rejected unlock request"));
+        }
     }
 
     private JSONObject postJson(Pc pc, String path, JSONObject body) throws Exception {
@@ -396,6 +464,14 @@ final class LanClient {
         final boolean pending;
         final String certificatePin;
         String sessionState = "unknown";
+        String fastExpiresAtUtc = "";
+        String pairedAtUtc = "";
+
+        boolean fastActive() {
+            if (fastExpiresAtUtc.isEmpty()) return false;
+            try { return java.time.Instant.parse(fastExpiresAtUtc).isAfter(java.time.Instant.now()); }
+            catch (Exception ignored) { return false; }
+        }
 
         Pc(String deviceId, String name, InetAddress address, int httpsPort, boolean pending, String certificatePin) {
             this.deviceId = deviceId;
@@ -413,13 +489,15 @@ final class LanClient {
         final String address;
         final boolean paired;
         final String ssid;
+        final String pairedAtUtc;
 
-        SavedPc(String deviceId, String name, String address, boolean paired, String ssid) {
+        SavedPc(String deviceId, String name, String address, boolean paired, String ssid, String pairedAtUtc) {
             this.deviceId = deviceId;
             this.name = name;
             this.address = address;
             this.paired = paired;
             this.ssid = ssid;
+            this.pairedAtUtc = pairedAtUtc;
         }
     }
 

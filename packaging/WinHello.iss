@@ -33,6 +33,9 @@ WizardStyle=modern
 
 [Files]
 Source: "{#PackageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "{#PackageDir}\scripts\update-installed-service.ps1"; Flags: dontcopy
+Source: "{#PackageDir}\bin\agent\*"; DestDir: "{autopf}\WinHelloLanDemo"; Flags: recursesubdirs createallsubdirs ignoreversion restartreplace; Check: IsWinHelloInstalled
+Source: "{#PackageDir}\bin\credential\WinHelloCredentialProvider.dll"; DestDir: "{autopf}\WinHelloLanDemo"; Flags: ignoreversion restartreplace; Check: IsWinHelloInstalled
 
 [Icons]
 Name: "{group}\WinHello Help"; Filename: "{cmd}"; Parameters: "/k ""{app}\winhello.cmd"" h"; WorkingDir: "{app}"; IconFilename: "{app}\winhello.ico"
@@ -40,6 +43,29 @@ Name: "{group}\WinHello Help"; Filename: "{cmd}"; Parameters: "/k ""{app}\winhel
 [Code]
 const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  ServiceKey = 'SYSTEM\CurrentControlSet\Services\WinHelloLanAgent';
+
+function IsWinHelloInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKLM, ServiceKey);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExitCode, ProcessResult: Integer;
+  StateFile, Arguments: string;
+begin
+  Result := '';
+  if not IsWinHelloInstalled then Exit;
+
+  ExtractTemporaryFile('update-installed-service.ps1');
+  StateFile := ExpandConstant('{tmp}\winhello-service-state.txt');
+  Arguments := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\update-installed-service.ps1') +
+    '" -Action Stop -StateFile "' + StateFile + '"';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Arguments, '', SW_HIDE,
+      ewWaitUntilTerminated, ProcessResult) or (ProcessResult <> 0) then
+    Result := 'WinHello could not stop its service safely. Close apps using WinHello and retry.';
+end;
 
 function HasPathEntry(const CurrentPath, Entry: string): Boolean;
 begin
@@ -85,11 +111,23 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ExitCode: Integer;
+  StateFile, Arguments: string;
 begin
   if CurStep = ssPostInstall then
   begin
     AddWinHelloPath;
     RemoveLegacyUserPath;
+    if IsWinHelloInstalled then
+    begin
+      StateFile := ExpandConstant('{tmp}\winhello-service-state.txt');
+      Arguments := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\update-installed-service.ps1') +
+        '" -Action Start -StateFile "' + StateFile + '"';
+      if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Arguments, '', SW_HIDE,
+          ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
+        MsgBox('The update files were installed, but the WinHello service did not restart. Restart Windows or start WinHelloLanAgent from Services.', mbError, MB_OK);
+    end;
   end;
 end;
 

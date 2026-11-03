@@ -7,6 +7,8 @@ Từ repo, chạy `scripts/build-windows.ps1` để tạo gói `dist/winhello-wi
 ```cmd
 winhello h
 winhello regi
+winhello fast on
+winhello fast off
 winhello v
 winhello uninstall
 ```
@@ -33,6 +35,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-binarie
 
 Script build từ `apps/lan-agent/` và `apps/credential-provider/`, dừng service, thay file trong `C:\Program Files\WinHelloLanDemo`, rồi chạy lại service. Việc chuyển thư mục nguồn trong repo không tự thay đổi bản đang cài.
 
+`winhello rm` erases all WinHello configuration on this PC, including pairing, TOTP secret, certificate, and saved Windows password. It requires typing `RESET`; the CLI remains installed. Then `winhello regi` creates a fresh configuration and QR and requires the Windows password again. When already registered, `winhello regi` reports that state and never prints a QR from the cached secret.
+
 ## Build riêng
 
 ```powershell
@@ -52,4 +56,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\uninstall-winh
 
 Uninstaller dừng và xóa service trước khi xóa Credential Provider, firewall rule, chứng chỉ và dữ liệu ghép đôi. Nếu service đang chờ Windows xóa, khởi động lại rồi chạy lại lệnh gỡ.
 
-Lệnh đặt lại ghép đôi cũng in QR trực tiếp trong terminal. Nếu máy đang cài phiên bản cũ, chạy `scripts/update-binaries.ps1` bằng Administrator trước khi đặt lại ghép đôi để LAN Agent có lệnh `--print-enrollment-qr`.
+`winhello rm` erases all WinHello configuration on this PC, including pairing, TOTP secret, certificate, and saved Windows password. It requires typing `RESET`; the CLI remains installed. Then `winhello regi` creates a fresh configuration and QR and requires the Windows password again. When already registered, `winhello regi` reports that state and never prints a QR from the cached secret.

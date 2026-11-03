@@ -1,3 +1,8 @@
+param(
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Release'
+)
+
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sdkRoot = Join-Path $repoRoot 'tools\android-sdk'
@@ -17,5 +22,7 @@ $env:JAVA_HOME = $jdk.FullName
 $env:ANDROID_HOME = $sdkRoot
 $env:ANDROID_SDK_ROOT = $sdkRoot
 $env:Path = "$($jdk.FullName)\bin;$sdkRoot\platform-tools;$sdkRoot\cmdline-tools\latest\bin;$env:Path"
-& $gradle -p (Join-Path $repoRoot 'apps\android') --no-daemon :app:assembleDebug
+
+$task = if ($Configuration -eq 'Release') { ':app:assembleRelease' } else { ':app:assembleDebug' }
+& $gradle -p (Join-Path $repoRoot 'apps\android') --no-daemon $task
 exit $LASTEXITCODE

@@ -1,6 +1,7 @@
 package com.example.winhello;
 
 import android.app.Activity;
+import android.app.KeyguardManager;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.BiometricPrompt;
 import android.os.Bundle;
@@ -34,6 +35,18 @@ public final class WidgetApprovalActivity extends Activity {
                 LanClient.Challenge challenge = client.getPendingChallenge(pc);
                 if (challenge == null || !pc.deviceId.equals(challenge.pcDeviceId))
                     throw new IllegalStateException("Yêu cầu đã hết hạn hoặc PC không còn chờ duyệt.");
+                KeyguardManager keyguard = getSystemService(KeyguardManager.class);
+                if (client.refreshFastStatus(pc) && keyguard != null && keyguard.isDeviceSecure() && !keyguard.isDeviceLocked()) {
+                    try {
+                        String payload = challenge.pcDeviceId + "\n" + challenge.requestId + "\n" + challenge.nonceBase64;
+                        client.approve(pc, challenge, FastPhoneKey.sign(pc.deviceId, payload.getBytes(StandardCharsets.UTF_8)), true);
+                        SignInWidgetProvider.updateFromPoll(this, client.pollSavedPcs());
+                        runOnUiThread(() -> closeWithMessage("Đã mở nhanh " + pc.name));
+                        return;
+                    } catch (Exception error) {
+                        android.util.Log.w("WinHello", "Fast approval unavailable, using biometric approval", error);
+                    }
+                }
                 Signature signature = PhoneSigningKey.newSignature(client.keyAlias(pc));
                 runOnUiThread(() -> showFingerprint(pc, challenge, signature));
             } catch (Exception error) {

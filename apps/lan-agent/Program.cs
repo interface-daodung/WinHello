@@ -34,15 +34,33 @@ if (args.Length == 1 && args[0] == "--print-download-qr")
     var downloadUrl = Console.In.ReadLine();
     if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) ||
         uri.Scheme != Uri.UriSchemeHttps ||
-        !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) ||
         !System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath,
-            @"^/interface-daodung/WinHello/releases/download/v\d+\.\d+\.\d+/WinHello-ver\d+\.\d+\.\d+-android-debug\.apk$"))
+            @"^/WinHello-ver\d+\.\d+\.\d+-android(?:-debug)?\.apk$"))
     {
-        Console.Error.WriteLine("A valid WinHello GitHub APK release URL is required on standard input.");
+        Console.Error.WriteLine("A valid HTTPS WinHello APK URL is required on standard input.");
         return 2;
     }
     using var generator = new QRCodeGenerator();
     using var qrData = generator.CreateQrCode(downloadUrl!, QRCodeGenerator.ECCLevel.M);
+    Console.WriteLine(new AsciiQRCode(qrData).GetGraphicSmall(true, false));
+    return 0;
+}
+
+if (args.Length == 1 && args[0] == "--print-fast-qr")
+{
+    var fastUri = Console.In.ReadLine();
+    if (!Uri.TryCreate(fastUri, UriKind.Absolute, out var uri) ||
+        uri.Scheme != "winhello" || uri.Host != "fast-unlock" ||
+        !Guid.TryParse(System.Web.HttpUtility.ParseQueryString(uri.Query)["pcid"], out _) ||
+        !Guid.TryParse(System.Web.HttpUtility.ParseQueryString(uri.Query)["ticket"], out _) ||
+        !int.TryParse(System.Web.HttpUtility.ParseQueryString(uri.Query)["days"], out var days) || days is < 1 or > 30 ||
+        !System.Text.RegularExpressions.Regex.IsMatch(System.Web.HttpUtility.ParseQueryString(uri.Query)["pin"] ?? "", "^[0-9A-Fa-f]{64}$"))
+    {
+        Console.Error.WriteLine("A valid WinHello fast-unlock URI is required on standard input.");
+        return 2;
+    }
+    using var generator = new QRCodeGenerator();
+    using var qrData = generator.CreateQrCode(fastUri, QRCodeGenerator.ECCLevel.Q);
     Console.WriteLine(new AsciiQRCode(qrData).GetGraphicSmall(true, false));
     return 0;
 }
@@ -63,7 +81,7 @@ if (configuration is null && string.IsNullOrWhiteSpace(Environment.GetEnvironmen
 using var certificate = AgentBootstrap.LoadCertificate(configuration);
 var deviceId = configuration?.DeviceId ?? DeviceIdStore.LoadOrCreate(stateDirectory);
 var totpSecret = configuration is null ? RandomNumberGenerator.GetBytes(20) : TotpEncoding.DecodeBase32(configuration.TotpSecret);
-var state = new DemoState(deviceId, totpSecret, Path.Combine(stateDirectory, "pairing.json"));
+var state = new DemoState(deviceId, totpSecret, Path.Combine(stateDirectory, "pairing.json"), Path.Combine(stateDirectory, "fast-unlock.json"));
 var certificatePin = Convert.ToHexString(SHA256.HashData(certificate.RawData));
 
 Console.WriteLine("WinHello LAN demo agent is starting.");
@@ -93,13 +111,15 @@ app.MapGet("/health", () => Results.Ok(new
     deviceId,
     pending = state.HasPendingRequest,
     paired = state.IsPaired,
+    pairedAtUtc = state.PairedAtUtc(),
+    fastUnlock = state.FastStatus(),
     sessionState = WindowsSessionState.Get(),
     windowsAuthentication = "not-integrated"
 }));
 
 app.MapPost("/v1/pair", (PairRequest request) =>
 {
-    if (!state.TryPair(request.DeviceId, request.TotpCode, request.PublicKey))
+    if (!state.TryPair(request.DeviceId, request.TotpCode, request.PublicKey, request.DeviceName))
         return Results.Unauthorized();
 
     return Results.Ok(new { paired = true, deviceId, windowsAuthentication = "not-integrated" });
@@ -124,7 +144,7 @@ app.MapGet("/v1/demo/pending", (string deviceId) =>
 
 app.MapPost("/v1/demo/approve", (ApprovalRequest request) =>
 {
-    if (!state.TryApprove(request.DeviceId, request.RequestId, request.Signature, request.TotpCode))
+    if (!state.TryApprove(request.DeviceId, request.RequestId, request.Signature, request.TotpCode, request.Fast))
         return Results.Json(new { error = "invalid_expired_or_replayed_approval" }, statusCode: StatusCodes.Status401Unauthorized);
 
     return Results.Ok(new
@@ -135,9 +155,17 @@ app.MapPost("/v1/demo/approve", (ApprovalRequest request) =>
     });
 });
 
+app.MapPost("/v1/fast-unlock/activate", (FastActivationRequest request) =>
+{
+    var expiry = state.TryActivateFast(request);
+    return expiry is null
+        ? Results.Json(new { error = "invalid_or_expired_activation" }, statusCode: StatusCodes.Status401Unauthorized)
+        : Results.Ok(new { expiresAtUtc = expiry.Value });
+});
+
 using var shutdown = new CancellationTokenSource();
 app.Lifetime.ApplicationStopping.Register(shutdown.Cancel);
-var pipeTask = NamedPipeStatusServer.RunAsync(PipeName, state, certificate, stateDirectory, shutdown.Token);
+var pipeTask = NamedPipeStatusServer.RunAsync(PipeName, state, certificate, certificatePin, stateDirectory, shutdown.Token);
 var discoveryTask = LanDiscoveryServer.RunAsync(DiscoveryPort, HttpsPort, deviceId, certificatePin, state, shutdown.Token);
 
 try
@@ -247,28 +275,37 @@ internal static class TotpEncoding
 }
 
 internal sealed record AgentConfiguration(string DeviceId, string TotpSecret, string CertificateThumbprint);
-internal sealed record PairRequest(string DeviceId, string TotpCode, string PublicKey);
-internal sealed record ApprovalRequest(string DeviceId, Guid RequestId, string Signature, string TotpCode);
+internal sealed record PairRequest(string DeviceId, string TotpCode, string PublicKey, string? DeviceName = null);
+internal sealed record ApprovalRequest(string DeviceId, Guid RequestId, string Signature, string TotpCode, bool Fast = false);
+internal sealed record FastActivationRequest(string DeviceId, Guid Ticket, int Days, string FastPublicKey, string Signature, string TotpCode);
+internal sealed record FastUnlockRecord(int Days, DateTimeOffset ActivatedAtUtc, DateTimeOffset ExpiresAtUtc, string PhoneDeviceId, string PublicKey);
+internal sealed record FastTicket(byte[] Hash, int Days, DateTimeOffset ExpiresAtUtc);
 internal sealed record PhoneChallenge(Guid RequestId, string DeviceId, string Nonce, DateTimeOffset ExpiresAt);
-internal sealed record PendingRequest(Guid RequestId, byte[] Nonce, DateTimeOffset ExpiresAt, bool Approved);
+internal sealed record PendingRequest(Guid RequestId, byte[] Nonce, DateTimeOffset ExpiresAt, bool Approved, bool FastApproved = false);
 
 internal sealed class DemoState
 {
     private readonly string deviceId;
     private readonly byte[] totpSecret;
     private readonly string pairingPath;
+    private readonly string fastPath;
     private readonly object gate = new();
     private readonly ConcurrentDictionary<Guid, PendingRequest> requests = new();
     private byte[]? publicKey;
     private string? pairedDeviceId;
+    private string pairedDeviceName = "";
+    private DateTimeOffset? pairedAtUtc;
     private int pairingAttempts;
     private DateTimeOffset pairingBlockedUntil;
+    private FastTicket? fastTicket;
+    private FastUnlockRecord? fastRecord;
 
-    public DemoState(string deviceId, byte[] totpSecret, string pairingPath)
+    public DemoState(string deviceId, byte[] totpSecret, string pairingPath, string fastPath)
     {
         this.deviceId = deviceId;
         this.totpSecret = totpSecret;
         this.pairingPath = pairingPath;
+        this.fastPath = fastPath;
         try
         {
             var saved = JsonSerializer.Deserialize<SavedPairing>(File.ReadAllText(pairingPath));
@@ -276,17 +313,107 @@ internal sealed class DemoState
             {
                 publicKey = Convert.FromBase64String(saved.PublicKey);
                 pairedDeviceId = saved.PhoneDeviceId;
+                pairedDeviceName = saved.DeviceName ?? "";
+                pairedAtUtc = saved.PairedAtUtc == default ? null : saved.PairedAtUtc;
             }
         }
         catch (Exception ex) when (ex is IOException or JsonException or FormatException)
         {
             Console.Error.WriteLine($"Ignoring unreadable pairing record: {ex.Message}");
         }
+        try { fastRecord = JsonSerializer.Deserialize<FastUnlockRecord>(File.ReadAllText(fastPath)); }
+        catch (Exception ex) when (ex is IOException or JsonException) { Console.Error.WriteLine($"Ignoring unreadable fast-unlock record: {ex.Message}"); }
+        if (fastRecord?.ExpiresAtUtc <= DateTimeOffset.UtcNow || fastRecord?.PhoneDeviceId != pairedDeviceId)
+            fastRecord = null;
     }
 
     public bool IsPaired
     {
         get { lock (gate) return publicKey is not null; }
+    }
+
+    public object FastStatus()
+    {
+        lock (gate)
+        {
+            var active = fastRecord is not null && fastRecord.ExpiresAtUtc > DateTimeOffset.UtcNow &&
+                publicKey is not null && fastRecord.PhoneDeviceId == pairedDeviceId;
+            return new { active, expiresAtUtc = active ? fastRecord!.ExpiresAtUtc : (DateTimeOffset?)null };
+        }
+    }
+
+    public DateTimeOffset? PairedAtUtc()
+    {
+        lock (gate) return pairedAtUtc;
+    }
+
+    public string FastStatusLine()
+    {
+        lock (gate)
+            return fastRecord is not null && fastRecord.ExpiresAtUtc > DateTimeOffset.UtcNow && publicKey is not null
+                ? $"ACTIVE|{fastRecord.Days}|{fastRecord.ExpiresAtUtc:O}" : "INACTIVE";
+    }
+
+    public string CreateFastTicket(int days, string certificatePin)
+    {
+        if (days is < 1 or > 30) return "ERROR|invalid_days";
+        lock (gate)
+        {
+            if (publicKey is null) return "ERROR|not_paired";
+            var ticket = Guid.NewGuid();
+            fastTicket = new FastTicket(SHA256.HashData(ticket.ToByteArray()), days, DateTimeOffset.UtcNow.AddMinutes(10));
+            return $"TICKET|{deviceId}|{ticket:D}|{days}|{certificatePin}";
+        }
+    }
+
+    public string DisableFast()
+    {
+        lock (gate)
+        {
+            try { File.Delete(fastPath); }
+            catch (IOException) { return "ERROR|persistence_failed"; }
+            fastRecord = null;
+            fastTicket = null;
+            foreach (var (id, request) in requests)
+                if (request.FastApproved && requests.TryRemove(id, out var removed))
+                    CryptographicOperations.ZeroMemory(removed.Nonce);
+            return "OK";
+        }
+    }
+
+    public DateTimeOffset? TryActivateFast(FastActivationRequest activation)
+    {
+        if (activation.Days is < 1 or > 30 || !TotpEncoding.Verify(totpSecret, activation.TotpCode)) return null;
+        lock (gate)
+        {
+            if (publicKey is null || pairedDeviceId != activation.DeviceId || fastTicket is null ||
+                !CryptographicOperations.FixedTimeEquals(fastTicket.Hash, SHA256.HashData(activation.Ticket.ToByteArray())) ||
+                fastTicket.Days != activation.Days ||
+                fastTicket.ExpiresAtUtc <= DateTimeOffset.UtcNow) return null;
+            try
+            {
+                var fastKey = Convert.FromBase64String(activation.FastPublicKey);
+                using var fastVerifier = ECDsa.Create();
+                fastVerifier.ImportSubjectPublicKeyInfo(fastKey, out _);
+                var payload = Encoding.UTF8.GetBytes($"FAST_ACTIVATE\n{deviceId}\n{activation.Ticket:D}\n{activation.Days}\n{activation.FastPublicKey}");
+                using var verifier = ECDsa.Create();
+                verifier.ImportSubjectPublicKeyInfo(publicKey, out _);
+                if (!verifier.VerifyData(payload, Convert.FromBase64String(activation.Signature), HashAlgorithmName.SHA256,
+                    DSASignatureFormat.Rfc3279DerSequence)) return null;
+                var now = DateTimeOffset.UtcNow;
+                var record = new FastUnlockRecord(activation.Days, now, now.AddDays(activation.Days), activation.DeviceId,
+                    activation.FastPublicKey);
+                File.WriteAllText(fastPath, JsonSerializer.Serialize(record));
+                fastRecord = record;
+                fastTicket = null;
+                return record.ExpiresAtUtc;
+            }
+            catch (Exception ex) when (ex is CryptographicException or FormatException or IOException)
+            {
+                Console.Error.WriteLine($"Fast activation rejected: {ex.Message}");
+                return null;
+            }
+        }
     }
 
     public bool HasPendingRequest
@@ -298,7 +425,17 @@ internal sealed class DemoState
         }
     }
 
-    public bool TryPair(string phoneDeviceId, string totpCode, string publicKeyBase64)
+    public string PairingStatusLine()
+    {
+        lock (gate)
+        {
+            if (publicKey is null || pairedDeviceId is null) return "UNPAIRED";
+            var name = Convert.ToBase64String(Encoding.UTF8.GetBytes(pairedDeviceName));
+            return $"PAIRED|{pairedDeviceId}|{name}|{pairedAtUtc?.ToString("O") ?? "unknown"}";
+        }
+    }
+
+    public bool TryPair(string phoneDeviceId, string totpCode, string publicKeyBase64, string? phoneDeviceName = null)
     {
         lock (gate)
         {
@@ -319,10 +456,14 @@ internal sealed class DemoState
                 var keyBytes = Convert.FromBase64String(publicKeyBase64);
                 using var verifier = ECDsa.Create();
                 verifier.ImportSubjectPublicKeyInfo(keyBytes, out _);
+                var safeName = new string((phoneDeviceName ?? "").Where(ch => !char.IsControl(ch) && ch != '|').Take(80).ToArray()).Trim();
+                var pairedTime = DateTimeOffset.UtcNow;
                 File.WriteAllText(pairingPath, JsonSerializer.Serialize(new SavedPairing(
-                    phoneDeviceId, Convert.ToBase64String(keyBytes))));
+                    phoneDeviceId, Convert.ToBase64String(keyBytes), safeName, pairedTime)));
                 publicKey = keyBytes;
                 pairedDeviceId = phoneDeviceId;
+                pairedDeviceName = safeName;
+                pairedAtUtc = pairedTime;
                 pairingAttempts = 0;
                 return true;
             }
@@ -349,20 +490,33 @@ internal sealed class DemoState
         {
             if (publicKey is null || !string.Equals(pairedDeviceId, phoneDeviceId, StringComparison.Ordinal))
                 return false;
-            try { File.Delete(pairingPath); }
-            catch (IOException ex) { Console.Error.WriteLine($"Could not remove pairing record: {ex.Message}"); return false; }
-            CryptographicOperations.ZeroMemory(publicKey);
-            publicKey = null;
-            pairedDeviceId = null;
-            foreach (var (id, request) in requests)
-            {
-                if (requests.TryRemove(id, out var removed))
-                    CryptographicOperations.ZeroMemory(removed.Nonce);
-            }
-            pairingAttempts = 0;
-            pairingBlockedUntil = DateTimeOffset.MinValue;
-            return true;
+            return RemovePairingLocked();
         }
+    }
+
+    public bool UnpairLocally()
+    {
+        lock (gate) return RemovePairingLocked();
+    }
+
+    private bool RemovePairingLocked()
+    {
+        if (publicKey is null) return false;
+        try { File.Delete(pairingPath); }
+        catch (IOException ex) { Console.Error.WriteLine($"Could not remove pairing record: {ex.Message}"); return false; }
+        CryptographicOperations.ZeroMemory(publicKey);
+        publicKey = null;
+        pairedDeviceId = null;
+        pairedDeviceName = "";
+        pairedAtUtc = null;
+        try { File.Delete(fastPath); } catch (IOException) { }
+        fastRecord = null;
+        fastTicket = null;
+        foreach (var (id, request) in requests)
+            if (requests.TryRemove(id, out var removed)) CryptographicOperations.ZeroMemory(removed.Nonce);
+        pairingAttempts = 0;
+        pairingBlockedUntil = DateTimeOffset.MinValue;
+        return true;
     }
 
     public string StartOrGetRequest()
@@ -389,6 +543,11 @@ internal sealed class DemoState
             var approved = requests.Values.FirstOrDefault(r => r.Approved);
             if (approved is null)
                 return "ERROR|not_approved";
+            if (approved.FastApproved && (fastRecord is null || fastRecord.ExpiresAtUtc <= DateTimeOffset.UtcNow))
+            {
+                requests.TryRemove(approved.RequestId, out _);
+                return "ERROR|fast_expired";
+            }
 
             var encPath = Path.Combine(stateDirectory, "credential.enc");
             if (!File.Exists(encPath))
@@ -444,7 +603,7 @@ internal sealed class DemoState
         }
     }
 
-    public bool TryApprove(string phoneDeviceId, Guid requestId, string signatureBase64, string totpCode)
+    public bool TryApprove(string phoneDeviceId, Guid requestId, string signatureBase64, string totpCode, bool fast)
     {
         if (!TotpEncoding.Verify(totpSecret, totpCode))
             return false;
@@ -455,7 +614,14 @@ internal sealed class DemoState
         {
             if (publicKey is null || !string.Equals(pairedDeviceId, phoneDeviceId, StringComparison.Ordinal))
                 return false;
-            keyBytes = publicKey;
+            if (fast)
+            {
+                if (fastRecord is null || fastRecord.ExpiresAtUtc <= DateTimeOffset.UtcNow ||
+                    fastRecord.PhoneDeviceId != phoneDeviceId) return false;
+                try { keyBytes = Convert.FromBase64String(fastRecord.PublicKey); }
+                catch (FormatException) { return false; }
+            }
+            else keyBytes = publicKey;
         }
 
         if (!requests.TryGetValue(requestId, out request) || request.Approved || request.ExpiresAt <= DateTimeOffset.UtcNow)
@@ -471,7 +637,7 @@ internal sealed class DemoState
                     DSASignatureFormat.Rfc3279DerSequence))
                 return false;
 
-            if (!requests.TryUpdate(requestId, request with { Approved = true }, request))
+            if (!requests.TryUpdate(requestId, request with { Approved = true, FastApproved = fast }, request))
                 return false;
 
             CryptographicOperations.ZeroMemory(request.Nonce);
@@ -499,7 +665,7 @@ internal sealed class DemoState
 
 }
 
-internal sealed record SavedPairing(string PhoneDeviceId, string PublicKey);
+internal sealed record SavedPairing(string PhoneDeviceId, string PublicKey, string? DeviceName = null, DateTimeOffset PairedAtUtc = default);
 
 internal static class DeviceIdStore
 {
@@ -553,7 +719,7 @@ internal static class NamedPipeStatusServer
             PipeOptions.Asynchronous);
     }
 
-    public static async Task RunAsync(string pipeName, DemoState state, X509Certificate2 certificate, string stateDirectory, CancellationToken cancellationToken)
+    public static async Task RunAsync(string pipeName, DemoState state, X509Certificate2 certificate, string certificatePin, string stateDirectory, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -569,6 +735,12 @@ internal static class NamedPipeStatusServer
                     "STATUS" => state.GetStatus(),
                     "START" => state.StartOrGetRequest(),
                     "CREDENTIAL" => state.GetCredential(certificate, stateDirectory),
+                    "FAST_STATUS" => state.FastStatusLine(),
+                    "FAST_OFF" => state.DisableFast(),
+                    "PAIRING_STATUS" => state.PairingStatusLine(),
+                    "UNPAIR_LOCAL" => state.UnpairLocally() ? "OK" : "ERROR|not_paired_or_persist_failed",
+                    _ when command?.StartsWith("FAST_CREATE ", StringComparison.Ordinal) == true &&
+                        int.TryParse(command[12..], out var days) => state.CreateFastTicket(days, certificatePin),
                     _ => "ERROR|unknown_command"
                 };
                 await writer.WriteLineAsync(response.AsMemory(), cancellationToken);

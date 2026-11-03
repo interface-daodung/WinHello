@@ -52,23 +52,36 @@
         android:layout_marginTop="11dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
-        <TextView
+        <LinearLayout
             android:id="@+id/widget_approve"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="54dp"
             android:layout_weight="1"
             android:background="@drawable/widget_action"
             android:contentDescription="Duyệt đăng nhập bằng vân tay"
             android:gravity="center"
-            android:text="Duyệt mở khóa"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:visibility="gone" />
+            android:orientation="horizontal"
+            android:visibility="gone">
+            <ImageView
+                android:id="@+id/widget_approve_icon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription=""
+                android:src="@drawable/ic_fingerprint" />
+            <TextView
+                android:id="@+id/widget_approve_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Duyệt mở khóa"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
         <TextView
             android:id="@+id/widget_refresh"
             android:layout_width="0dp"
-            android:layout_height="40dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
             android:background="@drawable/widget_secondary"
             android:contentDescription="Kiểm tra PC ngay"
@@ -76,5 +89,16 @@
             android:text="↻  Quét PC"
             android:textColor="#D6E9FF"
             android:textSize="14sp" />
+        <TextView
+            android:id="@+id/widget_refresh_compact"
+            android:layout_width="48dp"
+            android:layout_height="54dp"
+            android:background="@drawable/widget_secondary"
+            android:contentDescription="Quét PC ngay"
+            android:gravity="center"
+            android:text="↻"
+            android:textColor="#D6E9FF"
+            android:textSize="21sp"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>

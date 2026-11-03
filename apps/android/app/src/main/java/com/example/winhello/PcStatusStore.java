@@ -28,6 +28,8 @@ final class PcStatusStore {
                 entry.put("port", pc.httpsPort);
                 entry.put("pending", pc.pending);
                 entry.put("sessionState", pc.sessionState);
+                entry.put("fastExpiresAtUtc", pc.fastExpiresAtUtc);
+                entry.put("pairedAtUtc", pc.pairedAtUtc);
                 entries.put(entry);
             } catch (Exception ignored) { }
         }
@@ -53,6 +55,8 @@ final class PcStatusStore {
                         saved.address, saved.httpsPort, entry.optBoolean("pending", false),
                         saved.certificatePin);
                 pc.sessionState = entry.optString("sessionState", "unknown");
+                pc.fastExpiresAtUtc = entry.optString("fastExpiresAtUtc", "");
+                pc.pairedAtUtc = entry.optString("pairedAtUtc", "");
                 pcs.add(pc);
             }
         } catch (Exception ignored) { }
