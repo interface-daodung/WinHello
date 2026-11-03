@@ -11,7 +11,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="WinHello LAN Demo"
+        android:label="@string/app_name"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
@@ -37,7 +37,7 @@
         <receiver
             android:name=".SignInWidgetProvider"
             android:exported="true"
-            android:label="WinHello sign-in">
+            android:label="WinHello Widget">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

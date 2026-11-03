@@ -17,7 +17,7 @@ The script reads `VERSION`, verifies the Android `versionName`, and writes these
 
 ## Update server
 
-Use `start-server.bat` on the publishing PC. It creates a temporary Quick Tunnel, registers the current hostname at the stable Worker, and serves files from `publish/`. Build Android with the default Worker URL from `config/update-server.json`; do not build with the temporary Quick Tunnel hostname.
+Artifact distribution is managed by TunnelDrop (`hub`). Run `hub start --daemon` or `hub ui`. TunnelDrop automatically serves `publish/`, maintains the Cloudflare Quick Tunnel, and synchronizes the origin with the Worker in the background. Build Android with the default Worker URL from `config/update-server.json`.
 
 ## Update security notes
 
@@ -25,7 +25,7 @@ The public endpoint uses HTTPS and the updater checks the APK SHA-256 before pas
 
 ## Applying updates
 
-Build both signed Android and Windows release artifacts with `scripts\build-release.ps1`, then start `start-server.bat` to publish the new `publish\latest.json` and binaries. On Windows, run `winhello update`; it checks the Windows installer hash, requests Administrator approval, and updates the CLI plus an installed LAN Agent/Credential Provider while preserving pairing data. On Android, open WinHello; it checks the manifest periodically, asks before downloading, verifies the APK hash, then opens Android's installer for the final confirmation.
+Build both signed Android and Windows release artifacts with `scripts\build-release.ps1`, then ensure TunnelDrop is running (`hub status` or `hub start`) to publish the new `publish\latest.json` and binaries. On Windows, run `winhello update`; it checks the Windows installer hash, requests Administrator approval, and updates the CLI plus an installed LAN Agent/Credential Provider while preserving pairing data. On Android, open WinHello; it checks the manifest periodically, asks before downloading, verifies the APK hash, then opens Android's installer for the final confirmation.
 
 Android release builds require the existing release keystore settings in the repo `.env` file. Keep that same keystore for every update so Android can install over the existing app without uninstalling it. If an installed copy was signed with a different key (for example, a debug build), Android will reject the update; uninstalling that copy removes its local pairing data. `versionCode` is derived from `VERSION`, so increase the version before each release.
 # Cloudflare Worker and Quick Tunnel
@@ -41,7 +41,7 @@ The Worker at `https://api-183.interface-daodung.workers.dev` is the stable publ
 
 If the authenticated account does not own the `interface-daodung` workers.dev subdomain, Cloudflare will deploy to another URL. Update `config/update-server.json` and Android `WINHELLO_UPDATE_BASE_URL` accordingly.
 
-After deployment, run `start-server.bat`. It serves `publish/` locally, starts a Quick Tunnel, and registers that random origin at the Worker using the secret. Keep its window open. Closing it asks the Worker to clear the origin; abrupt PC/network failure is detected through `/__status` and returns 503 for downloads. On each restart, cloudflared creates a new random origin and the script registers it automatically. Check status with `winhello server`; `winhello app` and `winhello update` use the stable Worker URL.
+After deployment, start TunnelDrop with `hub start --daemon`. It serves `publish/` locally, manages the Quick Tunnel, and automatically registers the origin at the Worker in the background without needing an open terminal. Check status with `hub status` or `hub ui`; `winhello app` and `winhello update` use the stable Worker URL.
 
 The Worker only accepts Quick Tunnel HTTPS origins, only proxies GET/HEAD download requests, and never exposes the stored origin through public status. Protect `CONTROL_SECRET`; anyone who obtains it can redirect downloads. HTTPS protects transport against ordinary on-path interception, while a compromised Cloudflare account/Worker or publisher can still serve malicious files. The APK SHA-256 is delivered by the same Worker, so it detects accidental corruption but does not authenticate the publisher against a fully compromised Worker. Android also checks package signing continuity during installation.
 

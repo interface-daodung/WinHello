@@ -1,4 +1,4 @@
-﻿param([string]$Command = 'h', [string]$Argument)
+param([string]$Command = 'h', [string]$Argument)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -15,7 +15,6 @@ if ($Command -in @('h', 'help', '-h', '--help')) {
     Write-Host '  winhello app         Show Android APK download QR and URL'
     Write-Host '  winhello pair        List the phone paired with this PC'
     Write-Host '  winhello rm          Reset all WinHello configuration on this PC'
-    Write-Host '  winhello server      Check the update server status'
     Write-Host '  winhello update      Download and install the latest Windows version'
     Write-Host '  winhello fast        Show fast unlock status'
     Write-Host '  winhello fast <1-30> Show activation QR (use "on" for 3 days)'
@@ -127,17 +126,6 @@ if ($Command -eq 'app') {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host $downloadUrl
     exit 0
-}
-if ($Command -eq 'server') {
-    $baseUrl = if ($env:WINHELLO_UPDATE_BASE_URL) { $env:WINHELLO_UPDATE_BASE_URL } else { $defaultUpdateBaseUrl }
-    if (-not $baseUrl) { throw 'Update server URL is missing from config/update-server.json.' }
-    try {
-        $status = Invoke-RestMethod -Uri ($baseUrl.TrimEnd('/') + '/__status') -TimeoutSec 10
-        if ($status.online) { Write-Host "Update server online: $baseUrl" -ForegroundColor Green; exit 0 }
-    } catch { }
-    Write-Host "Update server offline: $baseUrl" -ForegroundColor Yellow
-    Write-Host 'Start it with start-server.bat on the publishing PC.'
-    exit 1
 }
 if ($Command -eq 'update') {
     $baseUrl = if ($env:WINHELLO_UPDATE_BASE_URL) { $env:WINHELLO_UPDATE_BASE_URL } else { $defaultUpdateBaseUrl }

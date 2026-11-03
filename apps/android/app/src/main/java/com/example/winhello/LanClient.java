@@ -234,9 +234,9 @@ final class LanClient {
         String secret = TotpSecretStore.load(context, pc.deviceId);
         String enrolledPin = enrolledPin(pc.deviceId);
         if (secret == null || enrolledPin == null)
-            throw new IllegalStateException("Scan the setup QR from this PC first.");
+            throw new IllegalStateException("Vui lòng quét mã QR thiết lập từ PC trước.");
         if (!enrolledPin.equalsIgnoreCase(pc.certificatePin))
-            throw new IllegalStateException("The PC certificate pin differs from the setup QR.");
+            throw new IllegalStateException("Mã chứng chỉ PC không khớp với mã QR thiết lập.");
         JSONObject body = new JSONObject();
         body.put("deviceId", phoneDeviceId());
         body.put("deviceName", Build.MANUFACTURER + " " + Build.MODEL);
@@ -244,7 +244,7 @@ final class LanClient {
         body.put("publicKey", PhoneSigningKey.publicKeyBase64(keyAlias(pc)));
         JSONObject result = postJson(pc, "/v1/pair", body);
         if (!result.optBoolean("paired", false))
-            throw new IllegalStateException("The PC rejected the TOTP enrollment code. Check phone/PC time and wait for the next code.");
+            throw new IllegalStateException("PC từ chối mã xác nhận TOTP. Hãy kiểm tra giờ trên điện thoại/PC và đợi mã tiếp theo.");
         context.getSharedPreferences("winhello", Context.MODE_PRIVATE)
                 .edit().putBoolean("paired_" + pc.deviceId, true)
                 .putString("paired_at_" + pc.deviceId, java.time.Instant.now().toString()).apply();
@@ -252,13 +252,13 @@ final class LanClient {
 
     void unpair(Pc pc) throws Exception {
         String secret = TotpSecretStore.load(context, pc.deviceId);
-        if (secret == null) throw new IllegalStateException("This PC has no saved TOTP enrollment.");
+        if (secret == null) throw new IllegalStateException("PC này chưa được lưu thông tin ghép đôi.");
         JSONObject body = new JSONObject();
         body.put("deviceId", phoneDeviceId());
         body.put("totpCode", TotpSecretStore.code(secret, System.currentTimeMillis() / 1000));
         JSONObject result = postJson(pc, "/v1/unpair", body);
         if (!result.optBoolean("unpaired", false))
-            throw new IllegalStateException("The PC did not revoke this phone enrollment.");
+            throw new IllegalStateException("PC không thể thu hồi ghép đôi.");
 
         String active = enrolledDeviceId();
         TotpSecretStore.delete(context, pc.deviceId);
@@ -316,7 +316,7 @@ final class LanClient {
 
     void approve(Pc pc, Challenge challenge, byte[] signature, boolean fast) throws Exception {
         String secret = TotpSecretStore.load(context, pc.deviceId);
-        if (secret == null) throw new IllegalStateException("This PC has no saved enrollment QR.");
+        if (secret == null) throw new IllegalStateException("PC này chưa lưu mã QR thiết lập.");
         JSONObject body = new JSONObject();
         body.put("deviceId", phoneDeviceId());
         body.put("requestId", challenge.requestId);
@@ -325,12 +325,12 @@ final class LanClient {
         body.put("totpCode", TotpSecretStore.code(secret, System.currentTimeMillis() / 1000));
         JSONObject result = postJson(pc, "/v1/demo/approve", body);
         if (!result.optBoolean("approved", false))
-            throw new IllegalStateException("The PC rejected this approval.");
+            throw new IllegalStateException("PC từ chối yêu cầu phê duyệt này.");
     }
 
     String activateFast(Pc pc, String ticket, int days, String fastPublicKey, byte[] signature) throws Exception {
         String secret = TotpSecretStore.load(context, pc.deviceId);
-        if (secret == null || !isPaired(pc)) throw new IllegalStateException("This phone is not paired with the PC.");
+        if (secret == null || !isPaired(pc)) throw new IllegalStateException("Điện thoại chưa được ghép đôi với PC này.");
         JSONObject body = new JSONObject();
         body.put("deviceId", phoneDeviceId());
         body.put("ticket", ticket);
@@ -361,7 +361,7 @@ final class LanClient {
         }
         JSONObject result = readJson(connection, false);
         if (!result.optBoolean("unlocked", false)) {
-            throw new IllegalStateException(result.optString("error", "PC rejected unlock request"));
+            throw new IllegalStateException(result.optString("error", "PC từ chối yêu cầu mở khóa"));
         }
     }
 
@@ -408,7 +408,7 @@ final class LanClient {
         InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
         if (stream == null) {
             connection.disconnect();
-            throw new IllegalStateException("PC returned HTTP " + code);
+            throw new IllegalStateException("PC phản hồi HTTP " + code);
         }
         byte[] bytes;
         try (InputStream input = stream; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -419,7 +419,7 @@ final class LanClient {
         }
         connection.disconnect();
         if (code < 200 || code >= 300)
-            throw new IllegalStateException("PC returned HTTP " + code + ": " + new String(bytes, StandardCharsets.UTF_8));
+            throw new IllegalStateException("PC phản hồi HTTP " + code + ": " + new String(bytes, StandardCharsets.UTF_8));
         return new JSONObject(new String(bytes, StandardCharsets.UTF_8));
     }
 
@@ -432,18 +432,18 @@ final class LanClient {
             public void checkServerTrusted(X509Certificate[] chain, String authType)
                     throws java.security.cert.CertificateException {
                 if (chain == null || chain.length == 0)
-                    throw new java.security.cert.CertificateException("PC supplied no certificate.");
+                    throw new java.security.cert.CertificateException("PC không cung cấp chứng chỉ bảo mật.");
                 try {
                     byte[] digest = MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded());
                     StringBuilder hex = new StringBuilder(digest.length * 2);
                     for (byte value : digest) hex.append(String.format(java.util.Locale.ROOT, "%02X", value));
                     String actual = hex.toString();
                     if (!actual.equals(normalizedPin))
-                        throw new java.security.cert.CertificateException("TLS certificate pin mismatch.");
+                        throw new java.security.cert.CertificateException("Chứng chỉ TLS của PC không khớp.");
                 } catch (java.security.cert.CertificateException ex) {
                     throw ex;
                 } catch (Exception ex) {
-                    throw new java.security.cert.CertificateException("Could not validate the PC certificate.", ex);
+                    throw new java.security.cert.CertificateException("Không thể xác thực chứng chỉ bảo mật của PC.", ex);
                 }
             }
 

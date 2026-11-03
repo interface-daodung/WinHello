@@ -918,18 +918,18 @@ public final class MainActivity extends Activity {
     }
 
     private void pairPhone(LanClient.Pc pc) {
-        status.setText("Confirming setup QR with the current TOTP code...");
+        status.setText("Đang xác nhận mã thiết lập với PC...");
         background.execute(() -> {
             try {
                 lanClient.pair(pc);
                 runOnUiThread(() -> {
-                    status.setText("Phone enrollment confirmed. Future approvals require TOTP and biometric confirmation.");
-                    Toast.makeText(this, "TOTP enrollment confirmed", Toast.LENGTH_SHORT).show();
+                    status.setText("Ghép đôi thành công. Các lần đăng nhập sau sẽ xác thực bằng vân tay.");
+                    Toast.makeText(this, "Ghép đôi PC thành công", Toast.LENGTH_SHORT).show();
                     showDevices();
                     scanLan();
                 });
             } catch (Exception error) {
-                runOnUiThread(() -> status.setText("Enrollment confirmation failed: " + error.getMessage()));
+                runOnUiThread(() -> status.setText("Ghép đôi thất bại: " + error.getMessage()));
             }
         });
     }
@@ -1009,18 +1009,18 @@ public final class MainActivity extends Activity {
                 });
     }
     private void approvePending(LanClient.Pc pc) {
-        status.setText("Checking for a pending PC request…");
+        status.setText("Đang kiểm tra yêu cầu từ PC…");
         background.execute(() -> {
             try {
                 LanClient.Challenge challenge = lanClient.getPendingChallenge(pc);
                 if (challenge == null) {
-                    runOnUiThread(() -> status.setText("No pending request. Select WinHello Phone on the Windows sign-in screen, then try again."));
+                    runOnUiThread(() -> status.setText("Không có yêu cầu chờ duyệt. Hãy chọn WinHello trên màn hình đăng nhập Windows rồi thử lại."));
                     return;
                 }
                 Signature signature = PhoneSigningKey.newSignature(lanClient.keyAlias(pc));
                 runOnUiThread(() -> showBiometricPrompt(pc, challenge, signature));
             } catch (Exception error) {
-                runOnUiThread(() -> status.setText("Could not prepare approval: " + error.getMessage()));
+                runOnUiThread(() -> status.setText("Không thể chuẩn bị phê duyệt: " + error.getMessage()));
             }
         });
     }
@@ -1029,17 +1029,17 @@ public final class MainActivity extends Activity {
         BiometricManager biometricManager = getSystemService(BiometricManager.class);
         int availability = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG);
         if (availability != BiometricManager.BIOMETRIC_SUCCESS) {
-            status.setText("Set up a strong fingerprint/biometric on this phone before approving.");
+            status.setText("Cần cài đặt vân tay hoặc sinh trắc học mạnh trước khi duyệt.");
             return;
         }
 
         BiometricPrompt prompt = new BiometricPrompt.Builder(this)
-                .setTitle("Confirm your fingerprint")
-                .setSubtitle("Approve sign-in to " + pc.name)
-                .setDescription("The biometric unlocks a one-time signing key. It is not sent to the PC.")
+                .setTitle("Xác nhận vân tay")
+                .setSubtitle("Duyệt đăng nhập " + pc.name)
+                .setDescription("Xác thực vân tay để mở khóa đăng nhập an toàn vào PC.")
                 .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                .setNegativeButton("Cancel", getMainExecutor(), (dialog, which) -> {
-                    status.setText("Approval canceled.");
+                .setNegativeButton("Hủy", getMainExecutor(), (dialog, which) -> {
+                    status.setText("Đã hủy phê duyệt.");
                 })
                 .setConfirmationRequired(true)
                 .build();
@@ -1058,16 +1058,16 @@ public final class MainActivity extends Activity {
                     @Override
                     public void onAuthenticationError(int errorCode, CharSequence errString) {
                         super.onAuthenticationError(errorCode, errString);
-                        status.setText("Approval canceled: " + errString);
+                        status.setText("Đã hủy phê duyệt: " + errString);
                     }
 
                     @Override
                     public void onAuthenticationFailed() {
                         super.onAuthenticationFailed();
-                        status.setText("Fingerprint was not recognized. Try again.");
+                        status.setText("Vân tay không khớp. Vui lòng thử lại.");
                     }
                 });
-        status.setText("Waiting for fingerprint confirmation…");
+        status.setText("Đang chờ xác nhận vân tay…");
     }
 
     private void signAndApprove(LanClient.Pc pc, LanClient.Challenge challenge,
@@ -1079,11 +1079,11 @@ public final class MainActivity extends Activity {
             byte[] signature = signing.sign();
             lanClient.approve(pc, challenge, signature);
             runOnUiThread(() -> {
-                status.setText("Phone approval accepted by " + pc.name + ". Windows sign-in is completing...");
+                status.setText("Đã duyệt mở khóa " + pc.name + ". Windows đang đăng nhập...");
                 scanLan();
             });
         } catch (Exception error) {
-            runOnUiThread(() -> status.setText("Approval failed: " + error.getMessage()));
+            runOnUiThread(() -> status.setText("Phê duyệt thất bại: " + error.getMessage()));
         }
     }
 

@@ -1,4 +1,4 @@
-# Android LAN demo
+# WinHello Android App
 
 Java app using Android's built-in `AppWidgetProvider` and `RemoteViews` APIs plus ZXing for QR scanning. The widget's scan button performs one LAN discovery and pinned HTTPS check without opening the main app. When a paired PC has a pending request, the widget shows an approval button that launches a brief biometric confirmation screen. The widget does not poll while the app is closed. During setup the app scans a QR containing the PC ID, TOTP secret, and TLS certificate pin; it encrypts the secret at rest with Android Keystore and confirms enrollment using a current RFC 6238 code. For each waiting request, a strong biometric unlocks a per-PC Android Keystore signing key; the app sends both the TOTP code and signed challenge. It never transmits a fingerprint or Windows password.
 

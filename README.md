@@ -45,7 +45,7 @@ Muốn gỡ WinHello khỏi một PC đã ghép đôi, hãy mở khóa Windows t
 | `winhello v` | Hiện phiên bản |
 | `winhello uninstall` | Gỡ Credential Provider, service và dữ liệu ghép đôi |
 
-Hai lệnh cập nhật dùng Worker URL ổn định trong `config/update-server.json`. Chạy `start-server.bat` để tự mở server, tạo Quick Tunnel mới và cập nhật đích Worker. APK build mới mặc định kiểm tra qua Worker. Xem [cấu hình Worker lần đầu](docs/release.md#cloudflare-worker-and-quick-tunnel).
+Hai lệnh cập nhật dùng Worker URL ổn định trong `config/update-server.json`. Máy chủ phân phối và Cloudflare Tunnel được quản lý tự động qua TunnelDrop (`hub start` / `hub status` / `hub ui`). APK build mới mặc định kiểm tra qua Worker. Xem [cấu hình Worker lần đầu](docs/release.md#cloudflare-worker-and-quick-tunnel).
 
 Android giữ các PC đã ghép trong danh sách khi offline; màn hình chính tự dò LAN mỗi 5 giây. Trạng thái **Đã mở/Đã khóa** lấy từ Windows qua HTTPS có ghim chứng chỉ. Nút thông tin **ⓘ** trong app giải thích các thao tác.
 Khi app đóng, widget không quét nền. Nhấn **↻ Quét PC** trên widget để kiểm tra một lần; nếu PC có yêu cầu đăng nhập, widget hiện nút **Duyệt mở khóa** và mở thẳng xác nhận sinh trắc học.
@@ -72,5 +72,5 @@ Trên Windows với .NET 10 SDK, LLVM-MinGW, Android SDK/Gradle và Inno Setup 7
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
 
-Installer, APK and checksums are created in `publish/`. The folder is ignored by Git. Start `start-server.bat` on the publishing PC to expose them through the stable Worker URL. See [release instructions](docs/release.md).
+Installer, APK and checksums are created in `publish/`. The folder is ignored by Git. Use TunnelDrop (`hub start` / `hub ui`) to expose them through the stable Worker URL. See [release instructions](docs/release.md).
 
