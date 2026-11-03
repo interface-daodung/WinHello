@@ -136,3 +136,5 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }
+
+tasks.withType<JavaCompile> { options.encoding = "UTF-8" }

@@ -2,6 +2,27 @@ package com.example.winhello;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.PendingIntent;
+import android.content.pm.PackageInstaller;
+import android.graphics.Typeface;
+import android.os.Build;
+import android.provider.Settings;
+import android.view.HapticFeedbackConstants;
+import android.view.View;
+import android.widget.ProgressBar;
+import org.json.JSONObject;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.app.KeyguardManager;
 import android.widget.EditText;
 import android.Manifest;
@@ -127,10 +148,12 @@ public final class MainActivity extends Activity {
         header.addView(vaultBtn, vaultLp);
 
         ImageButton info = iconButton(android.R.drawable.ic_menu_info_details, "Hướng dẫn");
-        info.setOnClickListener(view -> new AlertDialog.Builder(this)
-                .setTitle("WinHello " + appVersion())
-                .setMessage("Nhấn + để quét QR TOTP trên PC. App tìm máy mỗi 5 giây khi màn hình mở. Khi app đóng, nhấn ↻ trên widget để quét LAN một lần; nếu có yêu cầu, nhấn Duyệt mở khóa trên widget rồi xác nhận vân tay. Widget không quét liên tục. Nhấn biểu tượng thùng rác để xóa PC, kể cả khi offline. Nếu xóa khi offline, PC chưa thu hồi khóa ghép đôi. Trạng thái Tắt / không phản hồi được suy ra khi điện thoại dùng cùng SSID Wi-Fi đã lưu; Mất kết nối là khi đổi SSID. Cần quyền vị trí để đọc SSID.")
-                .setPositiveButton("Đã hiểu", null).show());
+        info.setOnClickListener(view -> showAppInfoDialog());
+        info.setOnLongClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            checkForAppUpdate();
+            return true;
+        });
         header.addView(info, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         status = new TextView(this);
@@ -664,6 +687,410 @@ public final class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+
+    private void showAppInfoDialog() {
+        LinearLayout customTitle = new LinearLayout(this);
+        customTitle.setOrientation(LinearLayout.VERTICAL);
+        customTitle.setPadding(dp(24), dp(20), dp(24), dp(8));
+
+        TextView appTitle = new TextView(this);
+        appTitle.setText("WinHello");
+        appTitle.setTextSize(21);
+        appTitle.setTypeface(null, Typeface.BOLD);
+        appTitle.setTextColor(Color.rgb(30, 41, 59));
+
+        TextView versionLabel = new TextView(this);
+        versionLabel.setText("Phiên bản: " + appVersion());
+        versionLabel.setTextSize(14);
+        versionLabel.setTextColor(Color.rgb(31, 117, 230));
+        versionLabel.setTypeface(null, Typeface.BOLD);
+        versionLabel.setPadding(0, dp(4), 0, 0);
+
+        TextView hintLabel = new TextView(this);
+        hintLabel.setText("(Nhấn giữ số phiên bản để kiểm tra cập nhật)");
+        hintLabel.setTextSize(12);
+        hintLabel.setTextColor(Color.rgb(100, 116, 139));
+        hintLabel.setPadding(0, dp(2), 0, 0);
+
+        customTitle.addView(appTitle);
+        customTitle.addView(versionLabel);
+        customTitle.addView(hintLabel);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setCustomTitle(customTitle)
+                .setMessage("Nhấn + để quét QR TOTP trên PC. App tìm máy mỗi 5 giây khi màn hình mở. Khi app đóng, nhấn ↻ trên widget để quét LAN một lần; nếu có yêu cầu, nhấn Duyệt mở khóa trên widget rồi xác nhận vân tay. Widget không quét liên tục. Nhấn biểu tượng thùng rác để xóa PC, kể cả khi offline. Nếu xóa khi offline, PC chưa thu hồi khóa ghép đôi. Trạng thái Tắt / không phản hồi được suy ra khi điện thoại dùng cùng SSID Wi-Fi đã lưu; Mất kết nối là khi đổi SSID. Cần quyền vị trí để đọc SSID.")
+                .setPositiveButton("Đã hiểu", null)
+                .create();
+
+        View.OnLongClickListener triggerCheck = v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            dialog.dismiss();
+            checkForAppUpdate();
+            return true;
+        };
+
+        versionLabel.setOnLongClickListener(triggerCheck);
+        appTitle.setOnLongClickListener(triggerCheck);
+        hintLabel.setOnLongClickListener(triggerCheck);
+
+        dialog.show();
+    }
+
+    private void checkForAppUpdate() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.HORIZONTAL);
+        layout.setGravity(Gravity.CENTER_VERTICAL);
+        layout.setPadding(dp(24), dp(20), dp(24), dp(20));
+
+        ProgressBar spinner = new ProgressBar(this);
+        layout.addView(spinner, new LinearLayout.LayoutParams(dp(36), dp(36)));
+
+        TextView msg = new TextView(this);
+        msg.setText("Đang kết nối đến máy chủ kiểm tra bản cập nhật...");
+        msg.setTextSize(14);
+        msg.setTextColor(Color.rgb(30, 41, 59));
+        msg.setPadding(dp(16), 0, 0, 0);
+        layout.addView(msg, new LinearLayout.LayoutParams(-1, -2));
+
+        AlertDialog progressDialog = new AlertDialog.Builder(this)
+                .setTitle("Kiểm tra cập nhật")
+                .setView(layout)
+                .setNegativeButton("Hủy", (d, w) -> d.dismiss())
+                .setCancelable(true)
+                .create();
+        progressDialog.show();
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String baseUrl = BuildConfig.UPDATE_BASE_URL;
+                if (baseUrl == null || baseUrl.trim().isEmpty()) {
+                    baseUrl = "https://api-183.interface-daodung.workers.dev";
+                }
+                URL url = new URL(baseUrl.replaceAll("/+$", "") + "/latest.json");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                conn.setRequestProperty("Accept", "application/json");
+
+                int code = conn.getResponseCode();
+                if (code != 200) {
+                    throw new IOException("Máy chủ trả về HTTP " + code);
+                }
+
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                try (InputStream in = conn.getInputStream()) {
+                    byte[] temp = new byte[4096];
+                    int r;
+                    while ((r = in.read(temp)) != -1) {
+                        buffer.write(temp, 0, r);
+                    }
+                }
+                String body = buffer.toString(StandardCharsets.UTF_8.name());
+                JSONObject json = new JSONObject(body);
+                String remoteVersion = json.optString("version", "").trim();
+                String apkName = json.optString("apk", "").trim();
+                String sha256 = json.optString("sha256", "").trim();
+
+                String currentVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+                final String finalBaseUrl = baseUrl;
+
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    progressDialog.dismiss();
+
+                    if (isNewerVersion(remoteVersion, currentVersion)) {
+                        showUpdateAvailableDialog(remoteVersion, currentVersion, apkName, sha256, finalBaseUrl);
+                    } else {
+                        showUpToDateDialog(currentVersion);
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    progressDialog.dismiss();
+                    showUpdateErrorDialog(e.getMessage());
+                });
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
+    private boolean isNewerVersion(String remote, String current) {
+        if (remote == null || remote.trim().isEmpty()) return false;
+        if (current == null || current.trim().isEmpty()) return true;
+
+        String r = remote.trim();
+        if (r.startsWith("v") || r.startsWith("V")) r = r.substring(1).trim();
+        String c = current.trim();
+        if (c.startsWith("v") || c.startsWith("V")) c = c.substring(1).trim();
+
+        String[] rParts = r.split("\\.");
+        String[] cParts = c.split("\\.");
+        int max = Math.max(rParts.length, cParts.length);
+
+        for (int i = 0; i < max; i++) {
+            int rNum = 0;
+            if (i < rParts.length) {
+                try { rNum = Integer.parseInt(rParts[i].replaceAll("[^0-9]", "")); } catch (Exception ignored) {}
+            }
+            int cNum = 0;
+            if (i < cParts.length) {
+                try { cNum = Integer.parseInt(cParts[i].replaceAll("[^0-9]", "")); } catch (Exception ignored) {}
+            }
+            if (rNum > cNum) return true;
+            if (rNum < cNum) return false;
+        }
+        return false;
+    }
+
+    private void showUpdateAvailableDialog(String remoteVersion, String currentVersion, String apkName, String sha256, String baseUrl) {
+        String msg = "Đã có phiên bản mới sẵn sàng để cập nhật:\n\n" +
+                "• Phiên bản hiện tại: v" + currentVersion + "\n" +
+                "• Phiên bản mới nhất: v" + remoteVersion + "\n\n" +
+                "Bạn có muốn tải về và cài đặt bản cập nhật này không?";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Có bản cập nhật mới!")
+                .setMessage(msg)
+                .setPositiveButton("Tải về", (dialog, which) -> {
+                    startDownloadAndInstall(remoteVersion, apkName, sha256, baseUrl);
+                })
+                .setNegativeButton("Để sau", null)
+                .show();
+    }
+
+    private void showUpToDateDialog(String currentVersion) {
+        new AlertDialog.Builder(this)
+                .setTitle("Kiểm tra cập nhật")
+                .setMessage("Bạn đang sử dụng phiên bản mới nhất (" + (currentVersion.startsWith("v") ? currentVersion : "v" + currentVersion) + ").")
+                .setPositiveButton("Đã hiểu", null)
+                .show();
+    }
+
+    private void showUpdateErrorDialog(String errorDetail) {
+        String message = "Không thể kiểm tra bản cập nhật mới.\n";
+        if (errorDetail != null && !errorDetail.trim().isEmpty()) {
+            message += "\nChi tiết: " + errorDetail;
+        } else {
+            message += "\nVui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.";
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Kiểm tra cập nhật")
+                .setMessage(message)
+                .setPositiveButton("Đóng", null)
+                .setNeutralButton("Thử lại", (dialog, which) -> checkForAppUpdate())
+                .show();
+    }
+
+    private void startDownloadAndInstall(String remoteVersion, String apkName, String sha256, String baseUrl) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(16), dp(24), dp(16));
+
+        TextView statusText = new TextView(this);
+        statusText.setText("Đang chuẩn bị tải v" + remoteVersion + "...");
+        statusText.setTextSize(14);
+        statusText.setTextColor(Color.rgb(30, 41, 59));
+        box.addView(statusText);
+
+        ProgressBar pb = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        pb.setIndeterminate(false);
+        pb.setMax(100);
+        pb.setProgress(0);
+        LinearLayout.LayoutParams pbLp = new LinearLayout.LayoutParams(-1, dp(18));
+        pbLp.setMargins(0, dp(12), 0, dp(8));
+        box.addView(pb, pbLp);
+
+        TextView progressDetail = new TextView(this);
+        progressDetail.setText("0%");
+        progressDetail.setTextSize(12);
+        progressDetail.setTextColor(Color.rgb(100, 116, 139));
+        box.addView(progressDetail);
+
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+
+        AlertDialog downloadDialog = new AlertDialog.Builder(this)
+                .setTitle("Tải về bản cập nhật")
+                .setView(box)
+                .setCancelable(false)
+                .setNegativeButton("Hủy", (d, w) -> {
+                    cancelled.set(true);
+                    d.dismiss();
+                })
+                .create();
+        downloadDialog.show();
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            HttpURLConnection conn = null;
+            InputStream in = null;
+            FileOutputStream out = null;
+            File tempApk = null;
+            try {
+                String downloadUrl = apkName.startsWith("http://") || apkName.startsWith("https://")
+                        ? apkName
+                        : (baseUrl.replaceAll("/+$", "") + "/" + apkName);
+
+                URL url = new URL(downloadUrl);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(30000);
+                int responseCode = conn.getResponseCode();
+                if (responseCode != 200) {
+                    throw new IOException("Máy chủ trả về HTTP " + responseCode);
+                }
+
+                long totalBytes = conn.getContentLength();
+                tempApk = new File(getCacheDir(), "winhello-update.apk");
+                if (tempApk.exists()) tempApk.delete();
+
+                in = conn.getInputStream();
+                out = new FileOutputStream(tempApk);
+                MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
+
+                byte[] buf = new byte[32768];
+                long downloadedBytes = 0;
+                int read;
+                long lastUiUpdate = 0;
+
+                while ((read = in.read(buf)) != -1) {
+                    if (cancelled.get()) {
+                        out.close();
+                        tempApk.delete();
+                        return;
+                    }
+                    out.write(buf, 0, read);
+                    sha256Digest.update(buf, 0, read);
+                    downloadedBytes += read;
+
+                    long now = System.currentTimeMillis();
+                    if (now - lastUiUpdate > 100 || downloadedBytes == totalBytes) {
+                        lastUiUpdate = now;
+                        final long cur = downloadedBytes;
+                        final long tot = totalBytes;
+                        runOnUiThread(() -> {
+                            if (cancelled.get()) return;
+                            if (tot > 0) {
+                                int percent = (int) ((cur * 100) / tot);
+                                pb.setProgress(percent);
+                                statusText.setText("Đang tải: " + percent + "%");
+                                progressDetail.setText(String.format(Locale.US, "%.1f MB / %.1f MB", cur / 1048576.0, tot / 1048576.0));
+                            } else {
+                                pb.setIndeterminate(true);
+                                statusText.setText("Đang tải bản cập nhật...");
+                                progressDetail.setText(String.format(Locale.US, "%.1f MB đã tải", cur / 1048576.0));
+                            }
+                        });
+                    }
+                }
+                out.flush();
+                out.close();
+                out = null;
+
+                if (sha256 != null && !sha256.trim().isEmpty()) {
+                    byte[] digest = sha256Digest.digest();
+                    StringBuilder hex = new StringBuilder();
+                    for (byte b : digest) {
+                        hex.append(String.format("%02x", b));
+                    }
+                    if (!hex.toString().equalsIgnoreCase(sha256.trim())) {
+                        tempApk.delete();
+                        throw new IOException("Mã kiểm tra tệp (SHA-256) không khớp với thông tin phát hành.");
+                    }
+                }
+
+                final File finalApk = tempApk;
+                runOnUiThread(() -> {
+                    if (cancelled.get()) return;
+                    downloadDialog.dismiss();
+                    installDownloadedApk(finalApk);
+                });
+
+            } catch (Exception e) {
+                if (tempApk != null && tempApk.exists()) {
+                    tempApk.delete();
+                }
+                runOnUiThread(() -> {
+                    if (cancelled.get()) return;
+                    downloadDialog.dismiss();
+                    new AlertDialog.Builder(this)
+                            .setTitle("Tải bản cập nhật thất bại")
+                            .setMessage("Lỗi: " + e.getMessage())
+                            .setPositiveButton("Đóng", null)
+                            .show();
+                });
+            } finally {
+                try { if (in != null) in.close(); } catch (Exception ignored) {}
+                try { if (out != null) out.close(); } catch (Exception ignored) {}
+                if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
+    private void installDownloadedApk(File apkFile) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!getPackageManager().canRequestPackageInstalls()) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Cấp quyền cài đặt")
+                        .setMessage("Để tiếp tục cài đặt bản cập nhật, vui lòng cho phép WinHello cài đặt ứng dụng từ nguồn này trong Cài đặt hệ thống.")
+                        .setPositiveButton("Mở Cài đặt", (d, w) -> {
+                            try {
+                                Intent manageIntent = new Intent(
+                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        Uri.parse("package:" + getPackageName())
+                                );
+                                startActivity(manageIntent);
+                            } catch (Exception ex) {
+                                Toast.makeText(this, "Không thể mở cài đặt: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+                            }
+                        })
+                        .setNegativeButton("Hủy", null)
+                        .show();
+                return;
+            }
+        }
+
+        try {
+            PackageInstaller packageInstaller = getPackageManager().getPackageInstaller();
+            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
+                    PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setAppPackageName(getPackageName());
+            int sessionId = packageInstaller.createSession(params);
+            PackageInstaller.Session session = packageInstaller.openSession(sessionId);
+
+            try (OutputStream out = session.openWrite("winhello_update", 0, apkFile.length());
+                 FileInputStream in = new FileInputStream(apkFile)) {
+                byte[] buffer = new byte[65536];
+                int c;
+                while ((c = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, c);
+                }
+                session.fsync(out);
+            }
+
+            getSharedPreferences("winhello_update", MODE_PRIVATE).edit()
+                    .putInt("session_id", sessionId)
+                    .putBoolean("session_committed", true)
+                    .apply();
+
+            Intent callbackIntent = new Intent(this, UpdateInstallReceiver.class);
+            callbackIntent.setAction(UpdateInstallReceiver.ACTION_INSTALL_RESULT);
+            callbackIntent.putExtra(UpdateInstallReceiver.EXTRA_SESSION_ID, sessionId);
+
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                flags |= PendingIntent.FLAG_MUTABLE;
+            }
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, sessionId, callbackIntent, flags);
+            session.commit(pendingIntent.getIntentSender());
+            session.close();
+        } catch (Exception e) {
+            Toast.makeText(this, "Không thể khởi chạy cài đặt: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     private String appVersion() {
