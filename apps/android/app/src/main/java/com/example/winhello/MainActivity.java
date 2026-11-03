@@ -45,6 +45,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.text.Html;
+import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 
 import java.nio.charset.StandardCharsets;
 import java.security.Signature;
@@ -442,13 +445,43 @@ public final class MainActivity extends Activity {
         for (LanClient.SavedPc item : saved) {
             LanClient.Pc pc = online.get(item.deviceId);
             boolean connected = pc != null;
+            boolean hasFast = (pc != null && pc.fastActive()) || item.fastActive();
+
+            FrameLayout container = new FrameLayout(this);
+            LinearLayout.LayoutParams containerLayout = new LinearLayout.LayoutParams(-1, -2);
+            containerLayout.bottomMargin = dp(12);
+            devices.addView(container, containerLayout);
+
+            FrameLayout deleteUnderlay = new FrameLayout(this);
+            deleteUnderlay.setBackground(round(Color.rgb(220, 38, 38), 20));
+            container.addView(deleteUnderlay, new FrameLayout.LayoutParams(-1, -1));
+
+            LinearLayout deleteAction = new LinearLayout(this);
+            deleteAction.setOrientation(LinearLayout.VERTICAL);
+            deleteAction.setGravity(Gravity.CENTER);
+            deleteAction.setPadding(dp(16), 0, dp(16), 0);
+            deleteUnderlay.addView(deleteAction, new FrameLayout.LayoutParams(dp(84), -1, Gravity.START | Gravity.CENTER_VERTICAL));
+
+            ImageView trashIcon = new ImageView(this);
+            trashIcon.setImageResource(android.R.drawable.ic_menu_delete);
+            trashIcon.setColorFilter(Color.WHITE);
+            deleteAction.addView(trashIcon, new LinearLayout.LayoutParams(dp(26), dp(26)));
+
+            TextView trashLabel = new TextView(this);
+            trashLabel.setText("Xóa");
+            trashLabel.setTextColor(Color.WHITE);
+            trashLabel.setTextSize(12);
+            trashLabel.setTypeface(null, Typeface.BOLD);
+            trashLabel.setPadding(0, dp(2), 0, 0);
+            deleteAction.addView(trashLabel);
+
+            deleteUnderlay.setOnClickListener(view -> confirmForget(item, pc));
+
             LinearLayout card = new LinearLayout(this);
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setPadding(dp(14), dp(16), dp(10), dp(16));
+            card.setPadding(dp(14), dp(16), dp(12), dp(16));
             card.setBackground(round(Color.rgb(24, 36, 55), 20));
-            LinearLayout.LayoutParams cardLayout = new LinearLayout.LayoutParams(-1, -2);
-            cardLayout.bottomMargin = dp(12);
-            devices.addView(card, cardLayout);
+            container.addView(card, new FrameLayout.LayoutParams(-1, -2));
 
             ImageView pcIcon = new ImageView(this);
             pcIcon.setImageResource(R.drawable.ic_pc);
@@ -457,15 +490,34 @@ public final class MainActivity extends Activity {
 
             LinearLayout labels = new LinearLayout(this);
             labels.setOrientation(LinearLayout.VERTICAL);
-            labels.setPadding(dp(12), 0, dp(4), 0);
+            labels.setPadding(dp(12), 0, dp(6), 0);
             card.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+
+            LinearLayout nameRow = new LinearLayout(this);
+            nameRow.setOrientation(LinearLayout.HORIZONTAL);
+            nameRow.setGravity(Gravity.CENTER_VERTICAL);
+            labels.addView(nameRow);
 
             TextView name = new TextView(this);
             name.setText(connected ? pc.name : item.name);
             name.setTextColor(Color.WHITE);
             name.setTextSize(17);
-            name.setTypeface(null, 1);
-            labels.addView(name);
+            name.setTypeface(null, Typeface.BOLD);
+            nameRow.addView(name);
+
+            if (hasFast) {
+                TextView fastBadge = new TextView(this);
+                fastBadge.setText("⚡ Mở nhanh");
+                fastBadge.setTextColor(Color.rgb(52, 211, 153));
+                fastBadge.setTextSize(11);
+                fastBadge.setTypeface(null, Typeface.BOLD);
+                fastBadge.setPadding(dp(6), dp(2), dp(6), dp(2));
+                fastBadge.setBackground(round(Color.argb(50, 16, 185, 129), 8));
+                LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
+                badgeLp.leftMargin = dp(8);
+                nameRow.addView(fastBadge, badgeLp);
+                fastBadge.setOnClickListener(v -> showFastUnlockDetails(item, pc));
+            }
 
             TextView detail = new TextView(this);
             String offlineState = currentSsid == null || item.ssid == null ? "●  Không kết nối" :
@@ -482,22 +534,232 @@ public final class MainActivity extends Activity {
             labels.addView(detail);
 
             if (connected && (!item.paired || pc.pending)) {
-                ImageButton action = iconButton(item.paired ? android.R.drawable.ic_lock_idle_lock :
-                        android.R.drawable.ic_menu_send, item.paired ? "Duyệt mở khóa" : "Xác nhận ghép đôi");
-                action.setOnClickListener(view -> {
+                LinearLayout actionBtn = new LinearLayout(this);
+                actionBtn.setOrientation(LinearLayout.HORIZONTAL);
+                actionBtn.setGravity(Gravity.CENTER);
+                actionBtn.setBackground(round(pc.pending ? Color.rgb(245, 158, 11) : Color.rgb(31, 117, 230), 16));
+                actionBtn.setPadding(dp(12), dp(8), dp(14), dp(8));
+
+                ImageView actionIcon = new ImageView(this);
+                actionIcon.setImageResource(item.paired ? android.R.drawable.ic_lock_idle_lock : android.R.drawable.ic_menu_send);
+                actionIcon.setColorFilter(Color.WHITE);
+                actionBtn.addView(actionIcon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+
+                TextView actionText = new TextView(this);
+                actionText.setText(item.paired ? " Duyệt" : " Ghép");
+                actionText.setTextColor(Color.WHITE);
+                actionText.setTextSize(13);
+                actionText.setTypeface(null, Typeface.BOLD);
+                actionBtn.addView(actionText);
+
+                actionBtn.setOnClickListener(view -> {
                     if (item.paired) approvePending(pc);
                     else pairPhone(pc);
                 });
-                card.addView(action, new LinearLayout.LayoutParams(dp(44), dp(44)));
+                card.addView(actionBtn, new LinearLayout.LayoutParams(-2, dp(38)));
             }
-            ImageButton remove = iconButton(android.R.drawable.ic_menu_delete, "Xóa " + item.name);
-            remove.setOnClickListener(view -> confirmForget(item, pc));
-            card.addView(remove, new LinearLayout.LayoutParams(dp(44), dp(44)));
-            card.setOnLongClickListener(view -> {
-                confirmForget(item, pc);
-                return true;
+
+            final float revealWidth = dp(84);
+            final Runnable[] longPressRef = new Runnable[1];
+            card.setOnTouchListener(new View.OnTouchListener() {
+                private float startX = 0f;
+                private float startY = 0f;
+                private float initialTranslation = 0f;
+                private boolean isSwiping = false;
+                private boolean longPressed = false;
+                private long downTime = 0;
+
+                @Override
+                public boolean onTouch(View v, MotionEvent event) {
+                    switch (event.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            startX = event.getRawX();
+                            startY = event.getRawY();
+                            initialTranslation = card.getTranslationX();
+                            isSwiping = false;
+                            longPressed = false;
+                            downTime = System.currentTimeMillis();
+
+                            longPressRef[0] = () -> {
+                                longPressed = true;
+                                card.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                                showFastUnlockDetails(item, pc);
+                            };
+                            card.postDelayed(longPressRef[0], ViewConfiguration.getLongPressTimeout());
+                            return true;
+
+                        case MotionEvent.ACTION_MOVE:
+                            float dx = event.getRawX() - startX;
+                            float dy = event.getRawY() - startY;
+
+                            if (Math.hypot(dx, dy) > dp(10) && longPressRef[0] != null) {
+                                card.removeCallbacks(longPressRef[0]);
+                                longPressRef[0] = null;
+                            }
+
+                            if (!isSwiping) {
+                                if (Math.abs(dx) > dp(12) && Math.abs(dx) > Math.abs(dy) * 1.3f) {
+                                    isSwiping = true;
+                                    v.getParent().requestDisallowInterceptTouchEvent(true);
+                                }
+                            }
+
+                            if (isSwiping) {
+                                float target = initialTranslation + dx;
+                                if (target < 0) target = 0;
+                                if (target > revealWidth * 1.3f) target = revealWidth * 1.3f;
+                                card.setTranslationX(target);
+                                return true;
+                            }
+                            break;
+
+                        case MotionEvent.ACTION_UP:
+                            if (longPressRef[0] != null) {
+                                card.removeCallbacks(longPressRef[0]);
+                                longPressRef[0] = null;
+                            }
+                            v.getParent().requestDisallowInterceptTouchEvent(false);
+
+                            if (isSwiping) {
+                                float trans = card.getTranslationX();
+                                if (trans > revealWidth * 0.45f) {
+                                    card.animate().translationX(revealWidth).setDuration(180).start();
+                                } else {
+                                    card.animate().translationX(0).setDuration(180).start();
+                                }
+                                return true;
+                            }
+
+                            if (!longPressed) {
+                                if (initialTranslation > dp(10)) {
+                                    card.animate().translationX(0).setDuration(180).start();
+                                    return true;
+                                }
+                                if (Math.hypot(event.getRawX() - startX, event.getRawY() - startY) < dp(12) &&
+                                        System.currentTimeMillis() - downTime < 500) {
+                                    if (connected && item.paired && pc != null && pc.pending) {
+                                        approvePending(pc);
+                                    } else {
+                                        showFastUnlockDetails(item, pc);
+                                    }
+                                    return true;
+                                }
+                            }
+                            break;
+
+                        case MotionEvent.ACTION_CANCEL:
+                            if (longPressRef[0] != null) {
+                                card.removeCallbacks(longPressRef[0]);
+                                longPressRef[0] = null;
+                            }
+                            v.getParent().requestDisallowInterceptTouchEvent(false);
+                            if (isSwiping) {
+                                float trans = card.getTranslationX();
+                                card.animate().translationX(trans > revealWidth * 0.5f ? revealWidth : 0).setDuration(180).start();
+                            }
+                            break;
+                    }
+                    return true;
+                }
             });
         }
+    }
+
+    private void showFastUnlockDetails(LanClient.SavedPc item, LanClient.Pc pc) {
+        String pcName = pc != null ? pc.name : item.name;
+        String rawExpires = (pc != null && !pc.fastExpiresAtUtc.isEmpty()) ? pc.fastExpiresAtUtc : item.fastExpiresAtUtc;
+        if (rawExpires.isEmpty()) {
+            rawExpires = lanClient.fastExpiresAt(item.deviceId);
+        }
+
+        boolean active = false;
+        String remainingText = "Chưa kích hoạt";
+        String expireDateText = "Không có";
+
+        if (!rawExpires.isEmpty()) {
+            try {
+                java.time.Instant expires = java.time.Instant.parse(rawExpires);
+                java.time.Instant now = java.time.Instant.now();
+                active = expires.isAfter(now);
+
+                java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter
+                        .ofPattern("HH:mm - dd/MM/yyyy")
+                        .withZone(java.time.ZoneId.systemDefault());
+                expireDateText = formatter.format(expires);
+
+                if (active) {
+                    long totalSeconds = java.time.Duration.between(now, expires).getSeconds();
+                    long days = totalSeconds / 86400;
+                    long hours = (totalSeconds % 86400) / 3600;
+                    long minutes = (totalSeconds % 3600) / 60;
+                    if (days > 0) {
+                        remainingText = days + " ngày " + hours + " giờ " + minutes + " phút";
+                    } else if (hours > 0) {
+                        remainingText = hours + " giờ " + minutes + " phút";
+                    } else {
+                        remainingText = minutes + " phút " + (totalSeconds % 60) + " giây";
+                    }
+                } else {
+                    remainingText = "Đã hết hạn";
+                }
+            } catch (Exception ignored) { }
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(10), dp(20), dp(16));
+        scroll.addView(content);
+
+        LinearLayout statusCard = new LinearLayout(this);
+        statusCard.setOrientation(LinearLayout.VERTICAL);
+        statusCard.setPadding(dp(16), dp(16), dp(16), dp(16));
+        int cardBgColor = active ? Color.rgb(236, 253, 245) : Color.rgb(241, 245, 249);
+        statusCard.setBackground(round(cardBgColor, 16));
+        content.addView(statusCard);
+
+        TextView statusHeader = new TextView(this);
+        statusHeader.setText(active ? "🟢 ĐANG HOẠT ĐỘNG" : (!rawExpires.isEmpty() ? "🔴 ĐÃ HẾT HẠN" : "⚪ CHƯA KÍCH HOẠT"));
+        statusHeader.setTextColor(active ? Color.rgb(5, 150, 105) : Color.rgb(100, 116, 139));
+        statusHeader.setTextSize(12);
+        statusHeader.setTypeface(null, Typeface.BOLD);
+        statusCard.addView(statusHeader);
+
+        TextView timeLabel = new TextView(this);
+        timeLabel.setText(remainingText);
+        timeLabel.setTextColor(active ? Color.rgb(4, 120, 87) : Color.rgb(30, 41, 59));
+        timeLabel.setTextSize(22);
+        timeLabel.setTypeface(null, Typeface.BOLD);
+        timeLabel.setPadding(0, dp(6), 0, dp(4));
+        statusCard.addView(timeLabel);
+
+        if (!rawExpires.isEmpty()) {
+            TextView expireDate = new TextView(this);
+            expireDate.setText((active ? "Hết hạn vào: " : "Đã hết hạn vào lúc: ") + expireDateText);
+            expireDate.setTextColor(Color.rgb(100, 116, 139));
+            expireDate.setTextSize(13);
+            statusCard.addView(expireDate);
+        }
+
+        TextView desc = new TextView(this);
+        desc.setPadding(0, dp(16), 0, 0);
+        desc.setLineSpacing(dp(4), 1.1f);
+        desc.setTextSize(13);
+        desc.setTextColor(Color.rgb(51, 65, 85));
+
+        String htmlDesc = "<b>⚡ Fast Unlock là gì?</b><br>"
+                + "Tính năng cho phép bạn mở khóa máy tính <b>" + pcName + "</b> tức thì ngay từ Widget hoặc ứng dụng mà không cần chờ hay quét vân tay lặp lại, miễn là điện thoại đang ở trạng thái đã mở khóa.<br><br>"
+                + "<b>🔒 Cách kích hoạt hoặc gia hạn:</b><br>"
+                + "Mỗi lần bạn duyệt mở khóa PC bằng vân tay trên điện thoại thành công, thời hạn Fast Unlock sẽ được tự động kích hoạt hoặc gia hạn thêm theo chính sách bảo mật của PC (mặc định 7 ngày).";
+
+        desc.setText(Html.fromHtml(htmlDesc, Html.FROM_HTML_MODE_COMPACT));
+        content.addView(desc);
+
+        new AlertDialog.Builder(this)
+                .setTitle("⚡ Mở Nhanh - " + pcName)
+                .setView(scroll)
+                .setPositiveButton("Đóng", null)
+                .show();
     }
 
     private void pairPhone(LanClient.Pc pc) {
@@ -541,6 +803,7 @@ public final class MainActivity extends Activity {
                     .setTitle("Hãy mở khóa Windows")
                     .setMessage("PC phải đang mở trong Windows để thu hồi và ẩn phương thức đăng nhập WinHello.")
                     .setPositiveButton("Đã hiểu", null)
+                    .setOnDismissListener(dialog -> showDevices())
                     .show();
             return;
         }
@@ -551,6 +814,7 @@ public final class MainActivity extends Activity {
                         : "Xác nhận vân tay để thu hồi ghép đôi, ẩn tùy chọn WinHello trên PC và xóa dữ liệu trên điện thoại.")
                 .setNegativeButton("Hủy", null)
                 .setPositiveButton("Xác nhận vân tay", (dialog, which) -> authenticateForget(item, pc))
+                .setOnDismissListener(dialog -> showDevices())
                 .show();
     }
 
@@ -718,9 +982,50 @@ public final class MainActivity extends Activity {
         customTitle.addView(versionLabel);
         customTitle.addView(hintLabel);
 
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(24), dp(8), dp(24), dp(16));
+        scroll.addView(body);
+
+        TextView content = new TextView(this);
+        content.setLineSpacing(dp(4), 1.15f);
+        content.setTextSize(13);
+        content.setTextColor(Color.rgb(51, 65, 85));
+
+        String guideHtml = ""
+                + "<font color='#0284c7'><b>➕ THÊM &amp; GHÉP ĐÔI PC</b></font><br>"
+                + "&bull; Nhấn nút <b><font color='#1d4ed8'>[ + ]</font></b> màu xanh ở góc dưới để quét mã <b><font color='#0f172a'>QR TOTP</font></b> trên máy tính.<br>"
+                + "&bull; Xác nhận ghép đôi một lần duy nhất để lưu khóa bảo mật liên kết hai thiết bị.<br><br>"
+
+                + "<font color='#0284c7'><b>🔄 DÒ TÌM TRONG MẠNG LAN</b></font><br>"
+                + "&bull; Khi mở ứng dụng: Tự động dò tìm các PC đã lưu <b><font color='#059669'>mỗi 5 giây</font></b>.<br>"
+                + "&bull; Khi app đóng: Nhấn biểu tượng <b><font color='#d97706'>↻ (Làm mới)</font></b> trên Widget để quét dò một lần.<br>"
+                + "&bull; <i>Widget không quét ngầm liên tục nhằm tiết kiệm tối đa pin điện thoại.</i><br><br>"
+
+                + "<font color='#0284c7'><b>⚡ FAST UNLOCK (MỞ NHANH)</b></font><br>"
+                + "&bull; Cho phép mở khóa PC tức thì từ <b><font color='#059669'>Widget</font></b> hoặc ứng dụng khi màn hình điện thoại đã mở.<br>"
+                + "&bull; <b><font color='#2563eb'>Nhấn giữ thẻ PC</font></b> để xem chi tiết thời gian hiệu lực còn lại.<br>"
+                + "&bull; Tự động gia hạn thêm sau mỗi lần duyệt mở khóa bằng vân tay thành công.<br><br>"
+
+                + "<font color='#0284c7'><b>👆 DUYỆT MỞ KHÓA PC</b></font><br>"
+                + "&bull; Khi PC ở màn hình khóa, nhấn <b><font color='#2563eb'>Duyệt mở khóa</font></b> trên Widget hoặc nhấn trực tiếp thẻ PC rồi <b><font color='#0f172a'>xác thực vân tay</font></b>.<br><br>"
+
+                + "<font color='#0284c7'><b>🗑️ XÓA THIẾT BỊ (THAO TÁC VUỐT)</b></font><br>"
+                + "&bull; <b><font color='#dc2626'>Vuốt thẻ PC sang phải</font></b> để mở nút <b>Xóa</b> màu đỏ.<br>"
+                + "&bull; Có thể xóa thiết bị cả khi offline (<i>lưu ý: PC sẽ chưa kịp thu hồi khóa nếu xóa lúc offline</i>).<br><br>"
+
+                + "<font color='#0284c7'><b>📶 TRẠNG THÁI &amp; KẾT NỐI WI-FI</b></font><br>"
+                + "&bull; <b><font color='#d97706'>Tắt / không phản hồi</font></b>: Điện thoại và PC đang dùng chung Wi-Fi đã lưu nhưng PC tắt hoặc đang ngủ.<br>"
+                + "&bull; <b><font color='#64748b'>Mất kết nối</font></b>: Điện thoại đang kết nối sang một mạng Wi-Fi khác.<br>"
+                + "&bull; <i>Bắt buộc cấp quyền Vị trí (Location) để Android cho phép ứng dụng đọc tên SSID mạng Wi-Fi hiện tại.</i>";
+
+        content.setText(Html.fromHtml(guideHtml, Html.FROM_HTML_MODE_COMPACT));
+        body.addView(content);
+
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setCustomTitle(customTitle)
-                .setMessage("Nhấn + để quét QR TOTP trên PC. App tìm máy mỗi 5 giây khi màn hình mở. Khi app đóng, nhấn ↻ trên widget để quét LAN một lần; nếu có yêu cầu, nhấn Duyệt mở khóa trên widget rồi xác nhận vân tay. Widget không quét liên tục. Nhấn biểu tượng thùng rác để xóa PC, kể cả khi offline. Nếu xóa khi offline, PC chưa thu hồi khóa ghép đôi. Trạng thái Tắt / không phản hồi được suy ra khi điện thoại dùng cùng SSID Wi-Fi đã lưu; Mất kết nối là khi đổi SSID. Cần quyền vị trí để đọc SSID.")
+                .setView(scroll)
                 .setPositiveButton("Đã hiểu", null)
                 .create();
 

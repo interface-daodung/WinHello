@@ -108,6 +108,9 @@ final class LanClient {
                 .putString("name_" + pc.deviceId, pc.name)
                 .putString("address_" + pc.deviceId, pc.address.getHostAddress());
         if (!pc.pairedAtUtc.isEmpty()) editor.putString("paired_at_" + pc.deviceId, pc.pairedAtUtc);
+        if (pc.fastExpiresAtUtc != null && !pc.fastExpiresAtUtc.isEmpty()) {
+            editor.putString("fast_expires_" + pc.deviceId, pc.fastExpiresAtUtc);
+        }
         String ssid = currentSsid();
         if (ssid != null) editor.putString("ssid_" + pc.deviceId, ssid);
         editor.apply();
@@ -123,6 +126,11 @@ final class LanClient {
         return ssid.replaceAll("^\"|\"$", "");
     }
 
+    String fastExpiresAt(String deviceId) {
+        return context.getSharedPreferences("winhello", Context.MODE_PRIVATE)
+                .getString("fast_expires_" + deviceId, "");
+    }
+
     List<SavedPc> savedPcs() {
         var prefs = context.getSharedPreferences("winhello", Context.MODE_PRIVATE);
         List<SavedPc> saved = new ArrayList<>();
@@ -132,7 +140,8 @@ final class LanClient {
             String name = prefs.getString("name_" + id, "Windows PC");
             saved.add(new SavedPc(id, name, prefs.getString("address_" + id, ""),
                     prefs.getBoolean("paired_" + id, false), prefs.getString("ssid_" + id, null),
-                    prefs.getString("paired_at_" + id, "")));
+                    prefs.getString("paired_at_" + id, ""),
+                    prefs.getString("fast_expires_" + id, "")));
         }
         Collections.sort(saved, (a, b) -> a.name.compareToIgnoreCase(b.name));
         return saved;
@@ -264,6 +273,7 @@ final class LanClient {
                 .remove("address_" + pc.deviceId)
                 .remove("ssid_" + pc.deviceId)
                 .remove("paired_at_" + pc.deviceId)
+                .remove("fast_expires_" + pc.deviceId)
                 .apply();
     }
 
@@ -275,7 +285,8 @@ final class LanClient {
                 .remove("name_" + pcId)
                 .remove("address_" + pcId)
                 .remove("ssid_" + pcId)
-                .remove("paired_at_" + pcId);
+                .remove("paired_at_" + pcId)
+                .remove("fast_expires_" + pcId);
         if (pcId.equals(enrolledDeviceId())) editor.remove("enrolled_pc");
         editor.apply();
     }
@@ -490,14 +501,26 @@ final class LanClient {
         final boolean paired;
         final String ssid;
         final String pairedAtUtc;
+        final String fastExpiresAtUtc;
 
         SavedPc(String deviceId, String name, String address, boolean paired, String ssid, String pairedAtUtc) {
+            this(deviceId, name, address, paired, ssid, pairedAtUtc, "");
+        }
+
+        SavedPc(String deviceId, String name, String address, boolean paired, String ssid, String pairedAtUtc, String fastExpiresAtUtc) {
             this.deviceId = deviceId;
             this.name = name;
             this.address = address;
             this.paired = paired;
             this.ssid = ssid;
             this.pairedAtUtc = pairedAtUtc;
+            this.fastExpiresAtUtc = fastExpiresAtUtc != null ? fastExpiresAtUtc : "";
+        }
+
+        boolean fastActive() {
+            if (fastExpiresAtUtc.isEmpty()) return false;
+            try { return java.time.Instant.parse(fastExpiresAtUtc).isAfter(java.time.Instant.now()); }
+            catch (Exception ignored) { return false; }
         }
     }
 
