@@ -77,6 +77,7 @@ public final class MainActivity extends Activity {
     private LinearLayout devices;
     private boolean scanInFlight;
     private String lastSsid;
+    private boolean mkvTotpVisible = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -143,12 +144,6 @@ public final class MainActivity extends Activity {
         title.setTypeface(null, 1);
         title.setPadding(dp(12), 0, 0, 0);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-
-        ImageButton vaultBtn = iconButton(android.R.drawable.ic_lock_lock, "MasterKeyVault");
-        vaultBtn.setOnClickListener(view -> showVaultMasterKeyDialog());
-        LinearLayout.LayoutParams vaultLp = new LinearLayout.LayoutParams(dp(44), dp(44));
-        vaultLp.setMargins(0, 0, dp(10), 0);
-        header.addView(vaultBtn, vaultLp);
 
         ImageButton info = iconButton(android.R.drawable.ic_menu_info_details, "Hướng dẫn");
         info.setOnClickListener(view -> showAppInfoDialog());
@@ -242,7 +237,12 @@ public final class MainActivity extends Activity {
         IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
         if (result == null || result.getContents() == null) return;
         try {
-            Uri uri = Uri.parse(result.getContents());
+            String raw = result.getContents().trim();
+            if (raw.matches("(?i)[A-Z2-7]{32}")) {
+                saveVaultMasterKeyDirectly(raw, "Mã Master Key");
+                return;
+            }
+            Uri uri = Uri.parse(raw);
             if ("winhello".equals(uri.getScheme()) && "vault-unlock".equals(uri.getHost())) {
                 handleVaultUnlockQr(uri);
                 return;
@@ -251,21 +251,29 @@ public final class MainActivity extends Activity {
                 handleOtpAuthQr(uri);
                 return;
             }
+            if (("winhello".equals(uri.getScheme()) && "vault-key".equals(uri.getHost())) || "mkv".equalsIgnoreCase(uri.getScheme())) {
+                String key = uri.getQueryParameter("key");
+                if (key == null && uri.getSchemeSpecificPart() != null) key = uri.getSchemeSpecificPart();
+                if (key != null && key.matches("(?i)[A-Z2-7= -]{16,64}")) {
+                    saveVaultMasterKeyDirectly(key, "MasterKeyVault");
+                    return;
+                }
+            }
             String pcId = uri.getQueryParameter("pcid");
             String secret = uri.getQueryParameter("secret");
             String pin = uri.getQueryParameter("pin");
             if (!"winhello".equals(uri.getScheme()) || !"enroll".equals(uri.getHost()) ||
                     pcId == null || secret == null || pin == null || !pin.matches("(?i)[0-9a-f]{64}"))
-                throw new IllegalArgumentException("This is not a valid WinHello setup QR.");
+                throw new IllegalArgumentException("Mã QR không đúng định dạng WinHello hoặc MKV.");
             java.util.UUID.fromString(pcId);
             if (!secret.matches("(?i)[A-Z2-7]{32,64}"))
-                throw new IllegalArgumentException("The QR contains an invalid TOTP secret.");
+                throw new IllegalArgumentException("Mã QR chứa secret TOTP không hợp lệ.");
             lanClient.saveEnrollment(pcId, secret, pin);
             showDevices();
             status.setText("Đã lưu QR. Đang tìm PC để xác nhận TOTP...");
             scanLan();
         } catch (Exception error) {
-            status.setText("QR enrollment failed: " + error.getMessage());
+            status.setText("Quét QR thất bại: " + error.getMessage());
         }
     }
 
@@ -275,66 +283,71 @@ public final class MainActivity extends Activity {
         String token = uri.getQueryParameter("token");
         if (endpoint == null || pin == null || token == null || !pin.matches("(?i)[0-9a-f]{64}")) {
             status.setText("Mã QR Vault Unlock không hợp lệ.");
+            Toast.makeText(this, "Mã QR mở khóa không hợp lệ.", Toast.LENGTH_SHORT).show();
             return;
         }
 
         if (!VaultMasterKeyStore.hasKey(this)) {
             new AlertDialog.Builder(this)
                     .setTitle("Chưa có Master Key")
-                    .setMessage("WinHello chưa lưu Master Key của MasterKeyVault.\n\nBạn có muốn nhập Master Key hoặc quét mã Authenticator trước không?")
-                    .setPositiveButton("Nhập Key", (d, w) -> showVaultMasterKeyDialog())
-                    .setNegativeButton("Hủy", null)
+                    .setMessage("Điện thoại chưa lưu Master Key của MasterKeyVault.\n\nHãy dùng nút [+] quét mã QR Authenticator từ MKV để lưu key trước.")
+                    .setPositiveButton("Đã hiểu", null)
                     .show();
             return;
         }
 
-        String targetHost = Uri.parse(endpoint).getHost();
         KeyguardManager keyguard = getSystemService(KeyguardManager.class);
         if (keyguard == null || !keyguard.isDeviceSecure() || keyguard.isDeviceLocked()) {
             status.setText("Hãy cài khóa màn hình và mở khóa điện thoại trước khi mở vault.");
+            Toast.makeText(this, "Hãy mở khóa điện thoại trước khi mở vault.", Toast.LENGTH_LONG).show();
             return;
         }
 
-        new AlertDialog.Builder(this)
-                .setTitle("Mở khóa MasterKeyVault?")
-                .setMessage("PC tại " + targetHost + " đang yêu cầu mở khóa két.\n\nXác nhận vân tay để gửi Master Key an toàn qua mạng LAN?")
-                .setPositiveButton("Xác nhận vân tay", (dialog, which) -> {
-                    BiometricPrompt prompt = new BiometricPrompt.Builder(this)
-                            .setTitle("Mở khóa MasterKeyVault")
-                            .setSubtitle("Gửi Master Key cho PC tại " + targetHost)
-                            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                            .setNegativeButton("Hủy", getMainExecutor(), (d, w) -> { })
-                            .build();
+        String targetHost = Uri.parse(endpoint).getHost();
+        BiometricManager biometricManager = getSystemService(BiometricManager.class);
+        if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                != BiometricManager.BIOMETRIC_SUCCESS) {
+            status.setText("Cần cài đặt vân tay hoặc sinh trắc học mạnh để mở khóa PC.");
+            Toast.makeText(this, "Cần vân tay để mở khóa PC.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-                    prompt.authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
-                        @Override
-                        public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult authResult) {
-                            background.execute(() -> {
-                                try {
-                                    String masterKey = VaultMasterKeyStore.load(MainActivity.this);
-                                    if (masterKey == null) throw new IllegalStateException("Không tìm thấy Master Key.");
-                                    lanClient.unlockVault(endpoint, pin, token, masterKey);
-                                    runOnUiThread(() -> {
-                                        status.setText("Đã mở khóa MasterKeyVault trên PC (" + targetHost + ") thành công!");
-                                        Toast.makeText(MainActivity.this, "Đã mở khóa PC thành công!", Toast.LENGTH_LONG).show();
-                                    });
-                                } catch (Exception ex) {
-                                    runOnUiThread(() -> {
-                                        status.setText("Mở khóa vault thất bại: " + ex.getMessage());
-                                        Toast.makeText(MainActivity.this, "Lỗi: " + ex.getMessage(), Toast.LENGTH_LONG).show();
-                                    });
-                                }
-                            });
-                        }
-
-                        @Override
-                        public void onAuthenticationError(int errorCode, CharSequence errString) {
-                            status.setText("Hủy xác thực: " + errString);
-                        }
-                    });
+        BiometricPrompt prompt = new BiometricPrompt.Builder(this)
+                .setTitle("Mở khóa MasterKeyVault")
+                .setSubtitle("Xác thực vân tay để gửi Master Key cho PC (" + targetHost + ")")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .setNegativeButton("Hủy", getMainExecutor(), (d, w) -> {
+                    status.setText("Đã hủy mở khóa MasterKeyVault.");
                 })
-                .setNegativeButton("Hủy", null)
-                .show();
+                .build();
+
+        prompt.authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+            @Override
+            public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult authResult) {
+                status.setText("Đang gửi Master Key đến PC (" + targetHost + ")...");
+                background.execute(() -> {
+                    try {
+                        String masterKey = VaultMasterKeyStore.load(MainActivity.this);
+                        if (masterKey == null) throw new IllegalStateException("Không tìm thấy Master Key.");
+                        lanClient.unlockVault(endpoint, pin, token, masterKey);
+                        runOnUiThread(() -> {
+                            status.setText("Đã mở khóa MasterKeyVault trên PC (" + targetHost + ") thành công!");
+                            Toast.makeText(MainActivity.this, "Đã mở khóa PC thành công!", Toast.LENGTH_LONG).show();
+                        });
+                    } catch (Exception ex) {
+                        runOnUiThread(() -> {
+                            status.setText("Mở khóa vault thất bại: " + ex.getMessage());
+                            Toast.makeText(MainActivity.this, "Lỗi mở khóa: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+                        });
+                    }
+                });
+            }
+
+            @Override
+            public void onAuthenticationError(int errorCode, CharSequence errString) {
+                status.setText("Hủy xác thực: " + errString);
+            }
+        });
     }
 
     private void handleOtpAuthQr(Uri uri) {
@@ -346,98 +359,263 @@ public final class MainActivity extends Activity {
         String issuer = uri.getQueryParameter("issuer");
         String label = uri.getPath() != null ? uri.getPath().replace("/", "") : "";
         String title = (issuer != null && !issuer.isEmpty()) ? issuer : (label.isEmpty() ? "MasterKeyVault" : label);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Lưu Master Key Vault?")
-                .setMessage("Phát hiện mã Authenticator từ " + title + ".\n\nBạn có muốn lưu mã này vào WinHello để dùng mở khóa PC qua LAN khi cần?")
-                .setPositiveButton("Lưu vào Keystore", (d, w) -> {
-                    try {
-                        VaultMasterKeyStore.save(this, secret);
-                        status.setText("Đã lưu Master Key Vault vào Keystore an toàn!");
-                        Toast.makeText(this, "Đã lưu Master Key!", Toast.LENGTH_SHORT).show();
-                    } catch (Exception ex) {
-                        status.setText("Lỗi lưu Master Key: " + ex.getMessage());
-                    }
-                })
-                .setNegativeButton("Hủy", null)
-                .show();
+        saveVaultMasterKeyDirectly(secret, title);
     }
 
-    private void showVaultMasterKeyDialog() {
-        boolean hasKey = VaultMasterKeyStore.hasKey(this);
-        String currentCode = "Chưa có";
-        if (hasKey) {
-            try {
-                String key = VaultMasterKeyStore.load(this);
-                if (key != null) currentCode = VaultMasterKeyStore.currentTotp(key);
-            } catch (Exception ignored) { }
+    private void saveVaultMasterKeyDirectly(String secret, String title) {
+        try {
+            VaultMasterKeyStore.save(this, secret);
+            runOnUiThread(() -> {
+                status.setText("Đã lưu Master Key Vault (" + title + ") vào Keystore!");
+                Toast.makeText(this, "Đã lưu Master Key Vault!", Toast.LENGTH_SHORT).show();
+                showDevices();
+            });
+        } catch (Exception ex) {
+            status.setText("Lỗi lưu Master Key: " + ex.getMessage());
+            Toast.makeText(this, "Lỗi: " + ex.getMessage(), Toast.LENGTH_LONG).show();
         }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle("MasterKeyVault");
-
-        if (hasKey) {
-            builder.setMessage("Trạng thái: ĐÃ LƯU TRONG KEYSTORE\n\nMã TOTP hiện tại: " + currentCode + "\n\nBạn có thể quét QR '6. Unlock with WinHello QR' trên PC để mở két bất cứ lúc nào.")
-                    .setPositiveButton("Nhập lại Key", (d, w) -> promptInputMasterKey())
-                    .setNeutralButton("Xóa Key", (d, w) -> {
-                        VaultMasterKeyStore.delete(this);
-                        status.setText("Đã xóa Master Key Vault khỏi điện thoại.");
-                        Toast.makeText(this, "Đã xóa Master Key", Toast.LENGTH_SHORT).show();
-                    })
-                    .setNegativeButton("Đóng", null);
-        } else {
-            builder.setMessage("Trạng thái: CHƯA CÓ MASTER KEY\n\nBạn có thể quét mã QR Authenticator từ `mkv` (bằng nút +) hoặc dán chuỗi Base32 vào đây để lưu.")
-                    .setPositiveButton("Nhập mã Base32", (d, w) -> promptInputMasterKey())
-                    .setNeutralButton("Quét QR", (d, w) -> scanEnrollmentQr())
-                    .setNegativeButton("Đóng", null);
-        }
-        builder.show();
     }
 
-    private void promptInputMasterKey() {
-        EditText input = new EditText(this);
-        input.setHint("Dán chuỗi Master Key 32 ký tự");
-        input.setSingleLine(true);
-        input.setTextColor(Color.WHITE);
-        input.setHintTextColor(Color.GRAY);
-        FrameLayout container = new FrameLayout(this);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2);
-        params.setMargins(dp(20), dp(10), dp(20), dp(10));
-        input.setLayoutParams(params);
-        container.addView(input);
+    private void authenticateDeleteVaultKey() {
+        BiometricManager biometricManager = getSystemService(BiometricManager.class);
+        if (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                != BiometricManager.BIOMETRIC_SUCCESS) {
+            status.setText("Cần cài đặt vân tay hoặc sinh trắc học mạnh để xóa Master Key.");
+            Toast.makeText(this, "Cần vân tay để xóa Master Key.", Toast.LENGTH_SHORT).show();
+            showDevices();
+            return;
+        }
+        BiometricPrompt prompt = new BiometricPrompt.Builder(this)
+                .setTitle("Xóa Master Key Vault?")
+                .setSubtitle("Xác thực vân tay để xóa Master Key khỏi Keystore phần cứng")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .setNegativeButton("Hủy", getMainExecutor(), (d, w) -> showDevices())
+                .build();
 
-        new AlertDialog.Builder(this)
-                .setTitle("Nhập Master Key")
-                .setMessage("Chuỗi Base32 gồm các chữ cái A-Z và số 2-7:")
-                .setView(container)
-                .setPositiveButton("Lưu", (d, w) -> {
-                    String text = input.getText().toString().trim();
-                    if (text.isEmpty()) return;
-                    try {
-                        VaultMasterKeyStore.save(this, text);
-                        status.setText("Đã lưu Master Key Vault vào Keystore an toàn!");
-                        Toast.makeText(this, "Đã lưu Master Key!", Toast.LENGTH_SHORT).show();
-                    } catch (Exception ex) {
-                        status.setText("Lỗi: " + ex.getMessage());
-                        Toast.makeText(this, "Lỗi: " + ex.getMessage(), Toast.LENGTH_LONG).show();
+        prompt.authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+            @Override
+            public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                VaultMasterKeyStore.delete(MainActivity.this);
+                runOnUiThread(() -> {
+                    status.setText("Đã xóa Master Key Vault an toàn khỏi điện thoại.");
+                    Toast.makeText(MainActivity.this, "Đã xóa Master Key Vault", Toast.LENGTH_SHORT).show();
+                    showDevices();
+                });
+            }
+
+            @Override
+            public void onAuthenticationError(int errorCode, CharSequence errString) {
+                runOnUiThread(() -> {
+                    status.setText("Hủy xóa Master Key.");
+                    showDevices();
+                });
+            }
+        });
+    }
+
+    private void renderMkvCard() {
+        FrameLayout mkvContainer = new FrameLayout(this);
+        LinearLayout.LayoutParams containerLayout = new LinearLayout.LayoutParams(-1, -2);
+        containerLayout.bottomMargin = dp(12);
+        devices.addView(mkvContainer, containerLayout);
+
+        FrameLayout deleteUnderlay = new FrameLayout(this);
+        deleteUnderlay.setBackground(round(Color.rgb(220, 38, 38), 20));
+        mkvContainer.addView(deleteUnderlay, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout deleteAction = new LinearLayout(this);
+        deleteAction.setOrientation(LinearLayout.VERTICAL);
+        deleteAction.setGravity(Gravity.CENTER);
+        deleteAction.setPadding(dp(16), 0, dp(16), 0);
+        deleteUnderlay.addView(deleteAction, new FrameLayout.LayoutParams(dp(84), -1, Gravity.START | Gravity.CENTER_VERTICAL));
+
+        ImageView trashIcon = new ImageView(this);
+        trashIcon.setImageResource(android.R.drawable.ic_menu_delete);
+        trashIcon.setColorFilter(Color.WHITE);
+        deleteAction.addView(trashIcon, new LinearLayout.LayoutParams(dp(26), dp(26)));
+
+        TextView trashLabel = new TextView(this);
+        trashLabel.setText("Xóa");
+        trashLabel.setTextColor(Color.WHITE);
+        trashLabel.setTextSize(12);
+        trashLabel.setTypeface(null, Typeface.BOLD);
+        trashLabel.setPadding(0, dp(2), 0, 0);
+        deleteAction.addView(trashLabel);
+
+        deleteUnderlay.setOnClickListener(view -> authenticateDeleteVaultKey());
+
+        LinearLayout card = new LinearLayout(this);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(16), dp(12), dp(16));
+        card.setBackground(round(Color.rgb(24, 36, 55), 20));
+        mkvContainer.addView(card, new FrameLayout.LayoutParams(-1, -2));
+
+        ImageView vaultIcon = new ImageView(this);
+        vaultIcon.setImageResource(android.R.drawable.ic_lock_lock);
+        vaultIcon.setColorFilter(Color.rgb(245, 158, 11)); // Amber Gold
+        card.addView(vaultIcon, new LinearLayout.LayoutParams(dp(36), dp(36)));
+
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.setPadding(dp(12), 0, dp(6), 0);
+        card.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        labels.addView(titleRow);
+
+        TextView title = new TextView(this);
+        title.setText("MasterKeyVault");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(17);
+        title.setTypeface(null, Typeface.BOLD);
+        titleRow.addView(title);
+
+        TextView badge = new TextView(this);
+        badge.setText("MKV Key");
+        badge.setTextColor(Color.rgb(251, 191, 36));
+        badge.setTextSize(11);
+        badge.setTypeface(null, Typeface.BOLD);
+        badge.setPadding(dp(6), dp(2), dp(6), dp(2));
+        badge.setBackground(round(Color.argb(50, 245, 158, 11), 8));
+        LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(-2, -2);
+        badgeLp.leftMargin = dp(8);
+        titleRow.addView(badge, badgeLp);
+
+        TextView totpCode = new TextView(this);
+        totpCode.setTextSize(18);
+        totpCode.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        totpCode.setPadding(0, dp(4), 0, 0);
+        labels.addView(totpCode);
+
+        TextView sub = new TextView(this);
+        sub.setText("Bảo vệ DPAPI • Quét QR mở khóa");
+        sub.setTextColor(Color.rgb(100, 116, 139));
+        sub.setTextSize(12);
+        sub.setPadding(0, dp(2), 0, 0);
+        labels.addView(sub);
+
+        TotpCountdownRingView countdownRing = new TotpCountdownRingView(this);
+        card.addView(countdownRing, new LinearLayout.LayoutParams(dp(36), dp(36)));
+
+        ImageButton eyeBtn = iconButton(android.R.drawable.ic_menu_view, "Ẩn/Hiện mã TOTP");
+        LinearLayout.LayoutParams eyeLp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        eyeLp.leftMargin = dp(6);
+        card.addView(eyeBtn, eyeLp);
+
+        Runnable updateTotpDisplay = () -> {
+            if (mkvTotpVisible) {
+                try {
+                    String key = VaultMasterKeyStore.load(this);
+                    String code = key != null ? VaultMasterKeyStore.currentTotp(key) : "------";
+                    if (code.length() == 6) {
+                        totpCode.setText(code.substring(0, 3) + " " + code.substring(3));
+                    } else {
+                        totpCode.setText(code);
                     }
-                })
-                .setNegativeButton("Hủy", null)
-                .show();
+                } catch (Exception ex) {
+                    totpCode.setText("------");
+                }
+                totpCode.setTextColor(Color.rgb(56, 189, 248));
+                eyeBtn.setColorFilter(Color.rgb(56, 189, 248));
+            } else {
+                totpCode.setText("● ● ● ● ● ●");
+                totpCode.setTextColor(Color.rgb(148, 163, 184));
+                eyeBtn.setColorFilter(Color.rgb(148, 163, 184));
+            }
+        };
+
+        updateTotpDisplay.run();
+
+        countdownRing.setOnRolloverListener(() -> runOnUiThread(updateTotpDisplay));
+
+        eyeBtn.setOnClickListener(v -> {
+            mkvTotpVisible = !mkvTotpVisible;
+            updateTotpDisplay.run();
+        });
+
+        final float revealWidth = dp(84);
+        card.setOnTouchListener(new View.OnTouchListener() {
+            private float startX = 0f;
+            private float startY = 0f;
+            private float initialTranslation = 0f;
+            private boolean isSwiping = false;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = event.getRawX();
+                        startY = event.getRawY();
+                        initialTranslation = card.getTranslationX();
+                        isSwiping = false;
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        float dx = event.getRawX() - startX;
+                        float dy = event.getRawY() - startY;
+
+                        if (!isSwiping) {
+                            if (Math.abs(dx) > dp(12) && Math.abs(dx) > Math.abs(dy) * 1.3f) {
+                                isSwiping = true;
+                                v.getParent().requestDisallowInterceptTouchEvent(true);
+                            }
+                        }
+
+                        if (isSwiping) {
+                            float target = initialTranslation + dx;
+                            if (target < 0) target = 0;
+                            if (target > revealWidth * 1.3f) target = revealWidth * 1.3f;
+                            card.setTranslationX(target);
+                            return true;
+                        }
+                        break;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        v.getParent().requestDisallowInterceptTouchEvent(false);
+                        if (isSwiping) {
+                            float trans = card.getTranslationX();
+                            if (trans > revealWidth * 0.45f) {
+                                card.animate().translationX(revealWidth).setDuration(180).start();
+                            } else {
+                                card.animate().translationX(0).setDuration(180).start();
+                            }
+                            return true;
+                        }
+                        if (initialTranslation > dp(10)) {
+                            card.animate().translationX(0).setDuration(180).start();
+                            return true;
+                        }
+                        break;
+                }
+                return true;
+            }
+        });
     }
 
     private void showDevices() {
         devices.removeAllViews();
+        boolean hasMkv = VaultMasterKeyStore.hasKey(this);
+        if (hasMkv) {
+            renderMkvCard();
+        }
+
         List<LanClient.SavedPc> saved = lanClient.savedPcs();
         if (saved.isEmpty()) {
-            status.setText("");
-            TextView empty = new TextView(this);
-            empty.setText("Chưa có PC\n\nNhấn + để thêm");
-            empty.setTextColor(Color.rgb(145, 163, 186));
-            empty.setTextSize(18);
-            empty.setGravity(Gravity.CENTER);
-            empty.setPadding(0, dp(100), 0, 0);
-            devices.addView(empty, new LinearLayout.LayoutParams(-1, dp(260)));
+            if (!hasMkv) {
+                status.setText("");
+                TextView empty = new TextView(this);
+                empty.setText("Chưa có PC\n\nNhấn + để thêm");
+                empty.setTextColor(Color.rgb(145, 163, 186));
+                empty.setTextSize(18);
+                empty.setGravity(Gravity.CENTER);
+                empty.setPadding(0, dp(100), 0, 0);
+                devices.addView(empty, new LinearLayout.LayoutParams(-1, dp(260)));
+            } else {
+                status.setText("Chưa có PC nào được lưu  •  Đã kích hoạt MasterKeyVault");
+            }
             return;
         }
         status.setText(saved.size() + " PC đã lưu  •  tự cập nhật mỗi 5 giây");
@@ -1010,6 +1188,13 @@ public final class MainActivity extends Activity {
 
                 + "<font color='#0284c7'><b>👆 DUYỆT MỞ KHÓA PC</b></font><br>"
                 + "&bull; Khi PC ở màn hình khóa, nhấn <b><font color='#2563eb'>Duyệt mở khóa</font></b> trên Widget hoặc nhấn trực tiếp thẻ PC rồi <b><font color='#0f172a'>xác thực vân tay</font></b>.<br><br>"
+
+                + "<font color='#0284c7'><b>🔐 MASTERKEYVAULT (MKV)</b></font><br>"
+                + "&bull; Nhấn nút <b><font color='#1d4ed8'>[ + ]</font></b> quét mã <b><font color='#0f172a'>QR Authenticator</font></b> từ MKV để lưu Master Key vào Keystore an toàn.<br>"
+                + "&bull; Thẻ MKV tự động xuất hiện ở <b><font color='#059669'>đầu danh sách</font></b> với mã 6 số TOTP và <b><font color='#0284c7'>vòng tròn đếm ngược 30 giây</font></b> khuyết dần.<br>"
+                + "&bull; Nhấn biểu tượng <b><font color='#d97706'>[ 👁️ ]</font></b> trên thẻ để ẩn hoặc hiện mã 6 số.<br>"
+                + "&bull; <b>Mở khóa DPAPI</b>: Khi PC yêu cầu mở khóa két, nhấn nút <b><font color='#1d4ed8'>[ + ]</font></b> quét mã QR trên màn hình PC và <b><font color='#059669'>xác thực vân tay</font></b> để mở ngay lập tức.<br>"
+                + "&bull; <b>Xóa Master Key</b>: <b><font color='#dc2626'>Vuốt thẻ MKV sang phải</font></b> và xác thực vân tay để xóa key bảo vệ.<br><br>"
 
                 + "<font color='#0284c7'><b>🗑️ XÓA THIẾT BỊ (THAO TÁC VUỐT)</b></font><br>"
                 + "&bull; <b><font color='#dc2626'>Vuốt thẻ PC sang phải</font></b> để mở nút <b>Xóa</b> màu đỏ.<br>"
