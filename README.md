@@ -58,11 +58,11 @@ Khi app đóng, widget không quét nền. Nhấn **↻ Quét PC** trên widget 
 | `apps/lan-agent/` | Windows Service .NET, HTTPS, UDP discovery và named pipe |
 | `apps/credential-provider/` | DLL C++/COM cho LogonUI |
 | `cli/` | Lệnh TUI `winhello` |
-| `contracts/` | Hợp đồng HTTP và named pipe |
+| `docs/contracts/` | Hợp đồng HTTP và named pipe |
 | `packaging/` | Cấu hình Inno Setup 7 |
 | `scripts/` | Build, cài đặt, cập nhật và gỡ |
 
-Xem thêm [kiến trúc](docs/architecture.md), [hướng dẫn cài/gỡ](INSTALL.md) và [hợp đồng giao tiếp](contracts/README.md).
+Xem thêm [kiến trúc](docs/architecture.md), [hướng dẫn cài/gỡ](INSTALL.md) và [hợp đồng giao tiếp](docs/contracts/README.md).
 
 ## Build từ mã nguồn
 
